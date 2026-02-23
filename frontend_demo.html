@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cctrack — Claude Code Cost Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  /* ─── Reset ─────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+
+  /* ─── Tokens ─────────────────────────────────────────── */
+  :root {
+    --bg-base:        #0a0a09;
+    --bg-surface:     #111110;
+    --bg-elevated:    #1a1a18;
+    --bg-subtle:      #1e1e1b;
+
+    --border-default: #2a2a27;
+    --border-subtle:  #1e1e1b;
+    --border-strong:  #3a3a36;
+
+    --text-primary:   #f0ede8;
+    --text-secondary: #8c8a84;
+    --text-tertiary:  #5a5855;
+    --text-disabled:  #3a3835;
+
+    --amber-300: #fcd34d;
+    --amber-400: #fbbf24;
+    --amber-500: #f59e0b;
+    --amber-600: #d97706;
+    --amber-glow: rgba(245,158,11,0.12);
+    --amber-glow-sm: rgba(245,158,11,0.06);
+
+    --cost-low:  #4ade80;
+    --cost-mid:  #f59e0b;
+    --cost-high: #f87171;
+
+    --status-live: #4ade80;
+    --status-reconnecting: #f59e0b;
+
+    --sidebar-w: 240px;
+
+    --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+    --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+    --space-12: 48px; --space-16: 64px;
+  }
+
+  /* ─── Animations ─────────────────────────────────────── */
+  @keyframes fadeSlideUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes pulse-row {
+    0%, 100% { background: transparent; }
+    50%       { background: var(--amber-glow-sm); }
+  }
+  @keyframes dot-breathe {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+  @keyframes grain {
+    0%,100% { transform: translate(0,0); }
+    10%      { transform: translate(-2%,-3%); }
+    20%      { transform: translate(2%,3%); }
+    30%      { transform: translate(-3%,1%); }
+    40%      { transform: translate(3%,-1%); }
+    50%      { transform: translate(-1%,4%); }
+    60%      { transform: translate(1%,-4%); }
+    70%      { transform: translate(-4%,2%); }
+    80%      { transform: translate(4%,-2%); }
+    90%      { transform: translate(-2%,3%); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+
+  /* ─── Body ───────────────────────────────────────────── */
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    display: flex;
+    min-height: 100vh;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: -200%;
+    width: 400%;
+    height: 400%;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+    opacity: 0.028;
+    pointer-events: none;
+    z-index: 9999;
+    animation: grain 8s steps(1) infinite;
+  }
+
+  /* ─── Sidebar ─────────────────────────────────────────── */
+  .sidebar {
+    width: var(--sidebar-w);
+    min-width: var(--sidebar-w);
+    height: 100vh;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    position: sticky;
+    top: 0;
+    overflow: hidden;
+  }
+
+  .sidebar-top {
+    padding: var(--space-8) var(--space-6) var(--space-6);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    text-decoration: none;
+  }
+  .logo-glyph {
+    width: 22px;
+    height: 22px;
+    background: var(--amber-500);
+    flex-shrink: 0;
+    position: relative;
+  }
+  .logo-glyph::after {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    background: var(--bg-surface);
+  }
+  .logo-text {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: 0.06em;
+    color: var(--text-primary);
+    line-height: 1;
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    padding: var(--space-5) var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .nav-label {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    padding: var(--space-4) var(--space-3) var(--space-2);
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 9px var(--space-3);
+    border-radius: 0;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13.5px;
+    font-weight: 400;
+    cursor: pointer;
+    transition: background 120ms, color 120ms;
+    position: relative;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+  }
+  .nav-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
+  .nav-item.active {
+    color: var(--text-primary);
+    background: var(--amber-glow-sm);
+  }
+  .nav-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 2px;
+    background: var(--amber-500);
+  }
+  .nav-icon {
+    width: 16px;
+    height: 16px;
+    opacity: 0.6;
+    flex-shrink: 0;
+  }
+  .nav-item.active .nav-icon { opacity: 1; }
+
+  .sidebar-footer {
+    padding: var(--space-5) var(--space-6);
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .connection-status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--status-live);
+    flex-shrink: 0;
+    animation: dot-breathe 2.4s ease-in-out infinite;
+  }
+  .version-str {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+
+  /* ─── Main ────────────────────────────────────────────── */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-10) var(--space-10) var(--space-16);
+    max-width: calc(1200px + var(--space-10) * 2);
+  }
+
+  /* ─── Page Header ─────────────────────────────────────── */
+  .page-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: var(--space-8);
+    animation: fadeSlideUp 0.4s ease both;
+  }
+  .page-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px;
+    letter-spacing: 0.04em;
+    color: var(--text-primary);
+    line-height: 1;
+  }
+  .page-date {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    padding-bottom: 4px;
+  }
+
+  /* ─── Stat Cards ──────────────────────────────────────── */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-4);
+    margin-bottom: var(--space-8);
+  }
+
+  .stat-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    padding: var(--space-6);
+    position: relative;
+    overflow: hidden;
+    animation: fadeSlideUp 0.45s ease both;
+  }
+  .stat-card:nth-child(1) { animation-delay: 40ms; }
+  .stat-card:nth-child(2) { animation-delay: 100ms; }
+  .stat-card:nth-child(3) { animation-delay: 160ms; }
+  .stat-card:nth-child(4) { animation-delay: 220ms; }
+
+  .stat-card.highlight::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--amber-500);
+  }
+  .stat-card.highlight {
+    background: linear-gradient(135deg, var(--amber-glow-sm), transparent 60%);
+  }
+
+  .stat-label {
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-3);
+  }
+  .stat-value {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 64px;
+    line-height: 0.9;
+    color: var(--text-primary);
+    letter-spacing: 0.01em;
+    margin-bottom: var(--space-3);
+  }
+  .stat-card.highlight .stat-value { color: var(--amber-400); }
+  .stat-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--text-tertiary);
+  }
+  .stat-sub span {
+    color: var(--text-secondary);
+  }
+
+  /* Budget progress */
+  .budget-bar-wrap {
+    margin-top: var(--space-4);
+    height: 2px;
+    background: var(--bg-subtle);
+    position: relative;
+    overflow: hidden;
+  }
+  .budget-bar-fill {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    background: var(--amber-500);
+    transition: width 600ms cubic-bezier(0.16,1,0.3,1);
+  }
+
+  /* ─── Charts Row ──────────────────────────────────────── */
+  .charts-row {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: var(--space-5);
+    margin-bottom: var(--space-8);
+  }
+
+  .chart-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    padding: var(--space-6);
+    animation: fadeSlideUp 0.45s ease both;
+    animation-delay: 280ms;
+  }
+
+  .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-5);
+  }
+  .chart-title {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .chart-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+  .chart-canvas-wrap {
+    height: 180px;
+    position: relative;
+  }
+
+  /* Donut card */
+  .donut-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    padding: var(--space-6);
+    animation: fadeSlideUp 0.45s ease both;
+    animation-delay: 320ms;
+    display: flex;
+    flex-direction: column;
+  }
+  .donut-wrap {
+    height: 150px;
+    position: relative;
+    margin-bottom: var(--space-5);
+  }
+  .donut-legend {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    flex: 1;
+  }
+  .legend-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+  }
+  .legend-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--text-secondary);
+  }
+  .legend-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .legend-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+
+  /* ─── Sessions Table ──────────────────────────────────── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-4);
+    animation: fadeSlideUp 0.45s ease both;
+    animation-delay: 360ms;
+  }
+  .section-title {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .view-all {
+    font-size: 12px;
+    color: var(--amber-500);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: color 150ms;
+  }
+  .view-all:hover { color: var(--amber-300); }
+
+  .sessions-table-wrap {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    overflow: hidden;
+    animation: fadeSlideUp 0.45s ease both;
+    animation-delay: 400ms;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead th {
+    padding: var(--space-3) var(--space-5);
+    text-align: left;
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: nowrap;
+  }
+  thead th.right { text-align: right; }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border-subtle);
+    transition: background 100ms;
+    cursor: pointer;
+    position: relative;
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--bg-elevated); }
+  tbody tr.active-session {
+    animation: pulse-row 2.4s ease-in-out infinite;
+  }
+  tbody tr.active-session td:first-child {
+    border-left: 2px solid var(--amber-500);
+  }
+
+  td {
+    padding: var(--space-4) var(--space-5);
+    color: var(--text-secondary);
+    vertical-align: middle;
+  }
+  td.right { text-align: right; }
+
+  .session-name {
+    color: var(--text-primary);
+    font-weight: 400;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .live-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bg-base);
+    background: var(--status-live);
+    padding: 2px 5px;
+    line-height: 1.4;
+  }
+
+  .model-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--text-tertiary);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-subtle);
+    padding: 2px 7px;
+    display: inline-block;
+  }
+
+  .cost-cell {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    text-align: right;
+  }
+  .cost-cell.top { color: var(--amber-400); }
+
+  .token-cell {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    text-align: right;
+  }
+
+  .rank {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-disabled);
+    width: 32px;
+    text-align: right;
+    padding-right: var(--space-2);
+  }
+  tbody tr:nth-child(1) .rank { color: var(--amber-500); }
+
+  /* ─── Scrollbar ───────────────────────────────────────── */
+  .main::-webkit-scrollbar { width: 6px; }
+  .main::-webkit-scrollbar-track { background: transparent; }
+  .main::-webkit-scrollbar-thumb { background: var(--border-default); }
+  .main::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+</style>
+</head>
+<body>
+
+<!-- ═══ SIDEBAR ═══════════════════════════════════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-top">
+    <a class="logo" href="#">
+      <div class="logo-glyph"></div>
+      <span class="logo-text">CCTRACK</span>
+    </a>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-label">Dashboard</div>
+
+    <a class="nav-item active" href="#">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="1" y="1" width="6" height="6"/>
+        <rect x="9" y="1" width="6" height="6"/>
+        <rect x="1" y="9" width="6" height="6"/>
+        <rect x="9" y="9" width="6" height="6"/>
+      </svg>
+      Overview
+    </a>
+
+    <a class="nav-item" href="#">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M1 4h14M1 8h14M1 12h14"/>
+        <circle cx="4" cy="4" r="1" fill="currentColor" stroke="none"/>
+        <circle cx="4" cy="8" r="1" fill="currentColor" stroke="none"/>
+        <circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/>
+      </svg>
+      Sessions
+    </a>
+
+    <div class="nav-label" style="margin-top: var(--space-4)">Config</div>
+
+    <a class="nav-item" href="#">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="8" cy="8" r="2.5"/>
+        <path d="M8 1v2M8 13v2M1 8h2M13 8h2M2.93 2.93l1.41 1.41M11.66 11.66l1.41 1.41M2.93 13.07l1.41-1.41M11.66 4.34l1.41-1.41"/>
+      </svg>
+      Settings
+    </a>
+
+    <a class="nav-item" href="#">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M2 4h12v8a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"/>
+        <path d="M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1"/>
+        <path d="M6 8h4M8 6v4"/>
+      </svg>
+      Rate Card
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="connection-status">
+      <div class="status-dot"></div>
+      <span>Live — watching logs</span>
+    </div>
+    <div class="version-str">v1.0.0 · rates v2.1</div>
+  </div>
+</aside>
+
+<!-- ═══ MAIN ═══════════════════════════════════════════════ -->
+<main class="main">
+
+  <!-- Page Header -->
+  <div class="page-header">
+    <h1 class="page-title">Overview</h1>
+    <div class="page-date" id="live-date"></div>
+  </div>
+
+  <!-- ── Stat Cards ───────────────────────────────────────── -->
+  <div class="stat-grid">
+    <div class="stat-card highlight">
+      <div class="stat-label">Today</div>
+      <div class="stat-value" id="val-today">$0</div>
+      <div class="stat-sub"><span id="tok-today">0</span> tokens</div>
+      <div class="budget-bar-wrap">
+        <div class="budget-bar-fill" id="budget-bar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">This Week</div>
+      <div class="stat-value" id="val-week">$0</div>
+      <div class="stat-sub"><span id="tok-week">0</span> tokens</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">This Month</div>
+      <div class="stat-value" id="val-month">$0</div>
+      <div class="stat-sub"><span id="tok-month">0</span> tokens</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Projected</div>
+      <div class="stat-value" id="val-projected">$0</div>
+      <div class="stat-sub"><span style="color:var(--text-tertiary)">est. this month</span></div>
+    </div>
+  </div>
+
+  <!-- ── Charts Row ────────────────────────────────────────── -->
+  <div class="charts-row">
+
+    <!-- Daily Bar Chart -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">Daily Spend — Last 30 Days</div>
+        <div class="chart-meta" id="chart-total"></div>
+      </div>
+      <div class="chart-canvas-wrap">
+        <canvas id="daily-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Token Donut -->
+    <div class="donut-card">
+      <div class="chart-header">
+        <div class="chart-title">Token Mix</div>
+      </div>
+      <div class="donut-wrap">
+        <canvas id="donut-chart"></canvas>
+      </div>
+      <div class="donut-legend" id="donut-legend"></div>
+    </div>
+
+  </div>
+
+  <!-- ── Sessions Table ─────────────────────────────────────── -->
+  <div class="section-header">
+    <div class="section-title">Top Sessions</div>
+    <a class="view-all" href="#">View all →</a>
+  </div>
+
+  <div class="sessions-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:40px">#</th>
+          <th>Session</th>
+          <th>Model</th>
+          <th>Started</th>
+          <th class="right">Tokens</th>
+          <th class="right">Cost</th>
+        </tr>
+      </thead>
+      <tbody id="sessions-body"></tbody>
+    </table>
+  </div>
+
+</main>
+
+<script>
+/* ══ Data ════════════════════════════════════════════════════ */
+const TARGET = {
+  today:     0.84,
+  week:      6.12,
+  month:     24.37,
+  projected: 31.20,
+  tokToday:  '1.2M',
+  tokWeek:   '8.9M',
+  tokMonth:  '34.1M',
+  budgetPct: 78,
+};
+
+const SESSIONS = [
+  { name: 'refactor-auth-service',     model: 'sonnet-4.6', time: '14:32', tokens: '842K', cost: 0.43, active: true  },
+  { name: 'implement-payment-flow',    model: 'opus-4.6',   time: '11:05', tokens: '620K', cost: 0.31, active: false },
+  { name: 'debug-websocket-handler',   model: 'sonnet-4.6', time: '09:48', tokens: '510K', cost: 0.21, active: false },
+  { name: 'write-prd-frontend',        model: 'sonnet-4.6', time: 'Yesterday', tokens: '480K', cost: 0.19, active: false },
+  { name: 'setup-jumpcloud-sso',       model: 'haiku-4.5',  time: 'Yesterday', tokens: '310K', cost: 0.09, active: false },
+];
+
+const TOKENS = {
+  labels: ['Input', 'Output', 'Cache Read', 'Cache Write'],
+  values: [48, 28, 18, 6],
+  colors: ['#f59e0b', '#fbbf24', '#3a3a36', '#2a2a27'],
+  borders: ['#f59e0b', '#fbbf24', '#4a4a46', '#3a3a36'],
+};
+
+/* ══ Utils ═══════════════════════════════════════════════════ */
+function easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
+
+function countUp(el, target, duration, format) {
+  const start = performance.now();
+  function tick(now) {
+    const p = Math.min((now - start) / duration, 1);
+    const v = target * easeOutQuart(p);
+    el.textContent = format(v);
+    if (p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function fmtDollar(v) {
+  if (v < 10) return '$' + v.toFixed(2);
+  return '$' + v.toFixed(0);
+}
+
+function fmtDollarLarge(v) {
+  // For Bebas display — no cents above $10
+  return '$' + (v < 10 ? v.toFixed(2) : v.toFixed(2));
+}
+
+/* ══ Live Date ════════════════════════════════════════════════ */
+function updateDate() {
+  const d = new Date();
+  document.getElementById('live-date').textContent =
+    d.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' })
+    + ' · '
+    + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+updateDate();
+setInterval(updateDate, 1000);
+
+/* ══ Counter Animations ══════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    countUp(document.getElementById('val-today'),     TARGET.today,     900, v => '$' + v.toFixed(2));
+    countUp(document.getElementById('val-week'),      TARGET.week,      900, v => '$' + v.toFixed(2));
+    countUp(document.getElementById('val-month'),     TARGET.month,     900, v => '$' + v.toFixed(2));
+    countUp(document.getElementById('val-projected'), TARGET.projected, 900, v => '$' + v.toFixed(2));
+
+    // token labels don't animate — they snap after counters finish
+    setTimeout(() => {
+      document.getElementById('tok-today').textContent  = TARGET.tokToday;
+      document.getElementById('tok-week').textContent   = TARGET.tokWeek;
+      document.getElementById('tok-month').textContent  = TARGET.tokMonth;
+    }, 700);
+
+    // budget bar
+    setTimeout(() => {
+      document.getElementById('budget-bar').style.width = TARGET.budgetPct + '%';
+    }, 300);
+  }, 200);
+});
+
+/* ══ Daily Chart ══════════════════════════════════════════════ */
+function buildDailyData() {
+  const days = 30;
+  const labels = [];
+  const values = [];
+  const now = new Date();
+
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    labels.push(i === 0 ? 'Today' : d.toLocaleDateString('en-GB', { day:'numeric', month:'short' }));
+
+    // Realistic spend pattern with some variance
+    const base = 0.5 + Math.random() * 1.2;
+    const spike = Math.random() > 0.85 ? 2.5 + Math.random() * 2 : 0;
+    values.push(+(base + spike).toFixed(3));
+  }
+
+  // Set today's value
+  values[values.length - 1] = TARGET.today;
+  return { labels, values };
+}
+
+const dailyData = buildDailyData();
+document.getElementById('chart-total').textContent =
+  '$' + dailyData.values.reduce((a, b) => a + b, 0).toFixed(2) + ' total';
+
+const barColors = dailyData.values.map((_, i) =>
+  i === dailyData.values.length - 1
+    ? 'rgba(251,191,36,1)'
+    : 'rgba(245,158,11,0.55)'
+);
+
+const dailyCtx = document.getElementById('daily-chart').getContext('2d');
+new Chart(dailyCtx, {
+  type: 'bar',
+  data: {
+    labels: dailyData.labels,
+    datasets: [{
+      data: dailyData.values,
+      backgroundColor: barColors,
+      borderColor: 'transparent',
+      borderWidth: 0,
+      borderRadius: 0,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: {
+      duration: 700,
+      easing: 'easeOutQuart',
+      delay: ctx => ctx.dataIndex * 18,
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1a1a18',
+        borderColor: '#2a2a27',
+        borderWidth: 1,
+        titleColor: '#8c8a84',
+        bodyColor: '#f59e0b',
+        bodyFont: { family: 'JetBrains Mono', size: 13 },
+        titleFont: { family: 'DM Sans', size: 11 },
+        padding: 12,
+        callbacks: {
+          label: ctx => ' $' + ctx.parsed.y.toFixed(4)
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: 'transparent' },
+        border: { color: '#1e1e1b' },
+        ticks: {
+          color: '#5a5855',
+          font: { family: 'DM Sans', size: 10 },
+          maxRotation: 0,
+          maxTicksLimit: 8,
+        }
+      },
+      y: {
+        grid: { color: '#1e1e1b', drawBorder: false },
+        border: { color: 'transparent', dash: [3,3] },
+        ticks: {
+          color: '#5a5855',
+          font: { family: 'JetBrains Mono', size: 10 },
+          callback: v => '$' + v.toFixed(2),
+          maxTicksLimit: 5,
+        }
+      }
+    }
+  }
+});
+
+/* ══ Donut Chart ══════════════════════════════════════════════ */
+const donutCtx = document.getElementById('donut-chart').getContext('2d');
+new Chart(donutCtx, {
+  type: 'doughnut',
+  data: {
+    labels: TOKENS.labels,
+    datasets: [{
+      data: TOKENS.values,
+      backgroundColor: TOKENS.colors,
+      borderColor: '#0a0a09',
+      borderWidth: 3,
+      hoverBorderColor: '#0a0a09',
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '72%',
+    animation: { duration: 800, easing: 'easeOutQuart' },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1a1a18',
+        borderColor: '#2a2a27',
+        borderWidth: 1,
+        titleColor: '#8c8a84',
+        bodyColor: '#f0ede8',
+        bodyFont: { family: 'JetBrains Mono', size: 12 },
+        titleFont: { family: 'DM Sans', size: 11 },
+        padding: 10,
+        callbacks: {
+          label: ctx => '  ' + ctx.label + ' — ' + ctx.parsed + '%'
+        }
+      }
+    }
+  }
+});
+
+// Legend
+const legendEl = document.getElementById('donut-legend');
+TOKENS.labels.forEach((label, i) => {
+  legendEl.innerHTML += `
+    <div class="legend-row">
+      <div class="legend-left">
+        <div class="legend-dot" style="background:${TOKENS.colors[i]}"></div>
+        <span>${label}</span>
+      </div>
+      <div class="legend-val">${TOKENS.values[i]}%</div>
+    </div>`;
+});
+
+/* ══ Sessions Table ═══════════════════════════════════════════ */
+const tbody = document.getElementById('sessions-body');
+SESSIONS.forEach((s, i) => {
+  const row = document.createElement('tr');
+  if (s.active) row.classList.add('active-session');
+
+  row.innerHTML = `
+    <td class="rank">${i + 1}</td>
+    <td>
+      <div class="session-name">
+        ${s.name}
+        ${s.active ? '<span class="live-badge">Live</span>' : ''}
+      </div>
+    </td>
+    <td><span class="model-badge">${s.model}</span></td>
+    <td style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--text-tertiary)">${s.time}</td>
+    <td class="token-cell">${s.tokens}</td>
+    <td class="cost-cell ${i === 0 ? 'top' : ''}">$${s.cost.toFixed(2)}</td>
+  `;
+  tbody.appendChild(row);
+});
+</script>
+</body>
+</html>

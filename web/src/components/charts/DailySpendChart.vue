@@ -1,0 +1,140 @@
+<template>
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title">Daily Spend — Last 30 Days</div>
+      <div class="chart-meta">{{ totalStr }} total</div>
+    </div>
+    <div class="chart-canvas-wrap">
+      <Bar v-if="chartData" :data="chartData" :options="chartOptions" />
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+import { Bar } from 'vue-chartjs'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Tooltip,
+} from 'chart.js'
+import type { DailySpend } from '../../types'
+import { formatCostDisplay } from '../../composables/useFormatCost'
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip)
+
+const props = defineProps<{ data: DailySpend[] }>()
+
+const totalStr = computed(() => {
+  const total = props.data.reduce((sum, d) => sum + d.cost, 0)
+  return formatCostDisplay(total)
+})
+
+const chartData = computed(() => {
+  if (!props.data.length) return null
+
+  const labels = props.data.map((d, i) => {
+    if (i === props.data.length - 1) return 'Today'
+    const date = new Date(d.date)
+    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  })
+
+  const values = props.data.map(d => d.cost)
+  const colors = values.map((_, i) =>
+    i === values.length - 1 ? 'rgba(251,191,36,1)' : 'rgba(245,158,11,0.55)'
+  )
+
+  return {
+    labels,
+    datasets: [{
+      data: values,
+      backgroundColor: colors,
+      borderColor: 'transparent',
+      borderWidth: 0,
+      borderRadius: 0,
+    }],
+  }
+})
+
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: {
+    duration: 700,
+    easing: 'easeOutQuart' as const,
+    delay: (ctx: any) => ctx.dataIndex * 18,
+  },
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: '#1a1a18',
+      borderColor: '#2a2a27',
+      borderWidth: 1,
+      titleColor: '#8c8a84',
+      bodyColor: '#f59e0b',
+      bodyFont: { family: 'JetBrains Mono', size: 13 },
+      titleFont: { family: 'DM Sans', size: 11 },
+      padding: 12,
+      callbacks: {
+        label: (ctx: any) => ' $' + ctx.parsed.y.toFixed(4),
+      },
+    },
+  },
+  scales: {
+    x: {
+      grid: { color: 'transparent' },
+      border: { color: '#1e1e1b' },
+      ticks: {
+        color: '#5a5855',
+        font: { family: 'DM Sans', size: 10 },
+        maxRotation: 0,
+        maxTicksLimit: 8,
+      },
+    },
+    y: {
+      grid: { color: '#1e1e1b' },
+      border: { color: 'transparent' },
+      ticks: {
+        color: '#5a5855',
+        font: { family: 'JetBrains Mono', size: 10 },
+        callback: (v: any) => '$' + Number(v).toFixed(2),
+        maxTicksLimit: 5,
+      },
+    },
+  },
+}
+</script>
+
+<style scoped>
+.chart-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  padding: var(--space-6);
+  animation: fadeSlideUp 0.45s ease both;
+  animation-delay: 280ms;
+}
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+}
+.chart-title {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.chart-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.chart-canvas-wrap {
+  height: 180px;
+  position: relative;
+}
+</style>

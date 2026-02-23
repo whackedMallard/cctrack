@@ -1,0 +1,222 @@
+package api
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"strconv"
+
+	"github.com/coder/websocket"
+	"github.com/kylecalbert/cctrack/internal/calculator"
+	"github.com/kylecalbert/cctrack/internal/config"
+	"github.com/kylecalbert/cctrack/internal/hub"
+	"github.com/kylecalbert/cctrack/internal/store"
+)
+
+type API struct {
+	store *store.Store
+	hub   *hub.Hub
+	cfg   *config.Config
+}
+
+func New(s *store.Store, h *hub.Hub, cfg *config.Config) *API {
+	return &API{store: s, hub: h, cfg: cfg}
+}
+
+func (a *API) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/summary", a.handleSummary)
+	mux.HandleFunc("GET /api/v1/sessions", a.handleSessions)
+	mux.HandleFunc("GET /api/v1/sessions/{id}", a.handleSession)
+	mux.HandleFunc("GET /api/v1/recent", a.handleRecent)
+	mux.HandleFunc("GET /api/v1/daily", a.handleDaily)
+	mux.HandleFunc("GET /api/v1/settings", a.handleGetSettings)
+	mux.HandleFunc("POST /api/v1/settings", a.handlePostSettings)
+	mux.HandleFunc("GET /api/v1/projects", a.handleProjects)
+	mux.HandleFunc("GET /api/v1/projects/monthly", a.handleProjectMonthly)
+	mux.HandleFunc("GET /api/v1/rates", a.handleRates)
+	mux.HandleFunc("GET /api/v1/ws", a.handleWS)
+}
+
+func (a *API) handleSummary(w http.ResponseWriter, r *http.Request) {
+	summary, err := a.store.GetSummary()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	input, output, cacheRead, cacheWrite, err := a.store.GetTokenBreakdown()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	costBreakdown, err := a.store.GetCostBreakdown()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	resp := map[string]any{
+		"today":     summary.Today,
+		"week":      summary.Week,
+		"month":     summary.Month,
+		"projected": summary.Projected,
+		"tokens": map[string]int64{
+			"input":       input,
+			"output":      output,
+			"cache_read":  cacheRead,
+			"cache_write": cacheWrite,
+		},
+		"cost_breakdown": costBreakdown,
+		"budget":         a.cfg.MonthlyBudgetUSD,
+	}
+	writeJSON(w, resp)
+}
+
+func (a *API) handleSessions(w http.ResponseWriter, r *http.Request) {
+	limit := queryInt(r, "limit", 25)
+	offset := queryInt(r, "offset", 0)
+	sort := r.URL.Query().Get("sort")
+	if sort == "" {
+		sort = "cost"
+	}
+	dir := r.URL.Query().Get("dir")
+	if dir == "" {
+		dir = "desc"
+	}
+
+	sessions, total, err := a.store.ListSessions(limit, offset, sort, dir)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"sessions": sessions,
+		"total":    total,
+		"limit":    limit,
+		"offset":   offset,
+	})
+}
+
+func (a *API) handleSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sess, err := a.store.GetSession(id)
+	if err != nil {
+		http.Error(w, "session not found", 404)
+		return
+	}
+	writeJSON(w, sess)
+}
+
+func (a *API) handleRecent(w http.ResponseWriter, r *http.Request) {
+	n := queryInt(r, "n", 10)
+	sessions, err := a.store.RecentSessions(n)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, sessions)
+}
+
+func (a *API) handleDaily(w http.ResponseWriter, r *http.Request) {
+	days := queryInt(r, "days", 30)
+	daily, err := a.store.GetDailySummary(days)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, daily)
+}
+
+func (a *API) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, a.cfg)
+}
+
+func (a *API) handlePostSettings(w http.ResponseWriter, r *http.Request) {
+	var updates struct {
+		MonthlyBudgetUSD   *float64 `json:"monthly_budget_usd"`
+		OpenBrowserOnServe *bool    `json:"open_browser_on_serve"`
+		LogDir             *string  `json:"log_dir"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+
+	if updates.MonthlyBudgetUSD != nil {
+		a.cfg.MonthlyBudgetUSD = *updates.MonthlyBudgetUSD
+	}
+	if updates.OpenBrowserOnServe != nil {
+		a.cfg.OpenBrowserOnServe = *updates.OpenBrowserOnServe
+	}
+	if updates.LogDir != nil {
+		a.cfg.LogDir = *updates.LogDir
+	}
+
+	if err := a.cfg.Save(); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, a.cfg)
+}
+
+func (a *API) handleProjects(w http.ResponseWriter, r *http.Request) {
+	projects, err := a.store.GetProjects()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, projects)
+}
+
+func (a *API) handleProjectMonthly(w http.ResponseWriter, r *http.Request) {
+	data, err := a.store.GetProjectMonthly()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, data)
+}
+
+func (a *API) handleRates(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, calculator.Rates)
+}
+
+func (a *API) handleWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		InsecureSkipVerify: true, // local-only server
+	})
+	if err != nil {
+		log.Printf("WebSocket accept error: %v", err)
+		return
+	}
+
+	// Send initial summary snapshot
+	summary, err := a.store.GetSummary()
+	if err == nil {
+		payload, _ := json.Marshal(summary)
+		event := hub.Event{Type: "summary.updated", Payload: payload}
+		data, _ := json.Marshal(event)
+		conn.Write(r.Context(), websocket.MessageText, data)
+	}
+
+	a.hub.HandleConnection(conn)
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+func queryInt(r *http.Request, key string, def int) int {
+	v := r.URL.Query().Get(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
+}

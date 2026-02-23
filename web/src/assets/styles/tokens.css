@@ -1,0 +1,67 @@
+:root {
+  /* Base */
+  --bg-base:        #0a0a09;
+  --bg-surface:     #111110;
+  --bg-elevated:    #1a1a18;
+  --bg-subtle:      #1e1e1b;
+
+  /* Borders */
+  --border-default: #2a2a27;
+  --border-subtle:  #1e1e1b;
+  --border-strong:  #3a3a36;
+
+  /* Text */
+  --text-primary:   #f0ede8;
+  --text-secondary: #8c8a84;
+  --text-tertiary:  #5a5855;
+  --text-disabled:  #3a3835;
+
+  /* Amber accent */
+  --amber-300: #fcd34d;
+  --amber-400: #fbbf24;
+  --amber-500: #f59e0b;
+  --amber-600: #d97706;
+  --amber-glow: rgba(245, 158, 11, 0.15);
+  --amber-glow-sm: rgba(245, 158, 11, 0.08);
+
+  /* Semantic */
+  --cost-low:  #4ade80;
+  --cost-mid:  #f59e0b;
+  --cost-high: #f87171;
+
+  /* WebSocket status */
+  --status-live: #4ade80;
+  --status-reconnecting: #f59e0b;
+  --status-offline: #f87171;
+
+  /* Layout */
+  --sidebar-w: 240px;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* Type scale */
+  --text-xs:   0.6875rem;
+  --text-sm:   0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg:   1.0625rem;
+  --text-xl:   1.25rem;
+  --text-2xl:  1.625rem;
+  --text-3xl:  2.25rem;
+  --text-hero: 4.5rem;
+  --text-display: 7rem;
+
+  /* Radius */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+}

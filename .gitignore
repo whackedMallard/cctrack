@@ -1,0 +1,18 @@
+# Binary
+cctrack
+
+# Dependencies
+web/node_modules/
+
+# Build output (embedded via go:embed, but regenerated)
+web/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

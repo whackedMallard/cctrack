@@ -1,0 +1,118 @@
+<template>
+  <div class="stat-card" :class="{ highlight }">
+    <div class="stat-label">{{ label }}</div>
+    <div class="stat-value">{{ formattedValue }}</div>
+    <div class="stat-sub">
+      <span v-if="tokens !== undefined">{{ formatTokens(tokens) }} tokens</span>
+      <span v-else-if="subtext" style="color: var(--text-tertiary)">{{ subtext }}</span>
+    </div>
+    <div v-if="highlight && budget > 0" class="budget-bar-wrap">
+      <div class="budget-bar-fill" :style="{ width: budgetPct + '%', background: budgetColor }"></div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, toRef } from 'vue'
+import { useCountUp } from '../../composables/useCountUp'
+import { formatTokens } from '../../composables/useFormatCost'
+
+const props = defineProps<{
+  label: string
+  value: number
+  tokens?: number
+  highlight?: boolean
+  budget?: number
+  subtext?: string
+}>()
+
+const targetValue = toRef(props, 'value')
+const animated = useCountUp(targetValue)
+
+const formattedValue = computed(() => {
+  const v = animated.value
+  if (v < 0.01) return '$' + v.toFixed(4)
+  return '$' + v.toFixed(2)
+})
+
+const budgetPct = computed(() => {
+  if (!props.budget || props.budget <= 0) return 0
+  return Math.min((props.value / props.budget) * 100, 100)
+})
+
+const budgetColor = computed(() => {
+  if (budgetPct.value >= 100) return 'var(--cost-high)'
+  if (budgetPct.value >= 80) return 'var(--cost-mid)'
+  return 'var(--amber-500)'
+})
+</script>
+
+<style scoped>
+.stat-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  padding: var(--space-6);
+  position: relative;
+  overflow: hidden;
+  animation: fadeSlideUp 0.45s ease both;
+}
+.stat-card:nth-child(1) { animation-delay: 40ms; }
+.stat-card:nth-child(2) { animation-delay: 100ms; }
+.stat-card:nth-child(3) { animation-delay: 160ms; }
+.stat-card:nth-child(4) { animation-delay: 220ms; }
+
+.stat-card.highlight::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--amber-500);
+}
+.stat-card.highlight {
+  background: linear-gradient(135deg, var(--amber-glow-sm), transparent 60%);
+}
+
+.stat-label {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-3);
+}
+.stat-value {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 64px;
+  line-height: 0.9;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+  margin-bottom: var(--space-3);
+}
+.stat-card.highlight .stat-value {
+  color: var(--amber-400);
+}
+.stat-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+.stat-sub span {
+  color: var(--text-secondary);
+}
+.budget-bar-wrap {
+  margin-top: var(--space-4);
+  height: 2px;
+  background: var(--bg-subtle);
+  position: relative;
+  overflow: hidden;
+}
+.budget-bar-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+</style>

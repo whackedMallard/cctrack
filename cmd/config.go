@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/kylecalbert/cctrack/internal/config"
+	"github.com/ksred/cctrack/internal/config"
 	"github.com/spf13/cobra"
 )
 

@@ -1,6 +1,6 @@
 package main
 
-import "github.com/kylecalbert/cctrack/cmd"
+import "github.com/ksred/cctrack/cmd"
 
 func main() {
 	cmd.WebFSFunc = WebFS

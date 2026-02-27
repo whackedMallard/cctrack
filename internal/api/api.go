@@ -7,10 +7,10 @@ import (
 	"strconv"
 
 	"github.com/coder/websocket"
-	"github.com/kylecalbert/cctrack/internal/calculator"
-	"github.com/kylecalbert/cctrack/internal/config"
-	"github.com/kylecalbert/cctrack/internal/hub"
-	"github.com/kylecalbert/cctrack/internal/store"
+	"github.com/ksred/cctrack/internal/calculator"
+	"github.com/ksred/cctrack/internal/config"
+	"github.com/ksred/cctrack/internal/hub"
+	"github.com/ksred/cctrack/internal/store"
 )
 
 type API struct {

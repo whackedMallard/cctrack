@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/kylecalbert/cctrack/internal/config"
-	"github.com/kylecalbert/cctrack/internal/parser"
-	"github.com/kylecalbert/cctrack/internal/store"
+	"github.com/ksred/cctrack/internal/config"
+	"github.com/ksred/cctrack/internal/parser"
+	"github.com/ksred/cctrack/internal/store"
 	"github.com/spf13/cobra"
 )
 

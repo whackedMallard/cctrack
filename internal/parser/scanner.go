@@ -53,7 +53,7 @@ func ExtractSessionInfo(path string) SessionInfo {
 
 func extractProject(dir string) string {
 	base := filepath.Base(dir)
-	// Project dirs look like: -home-kyle-Github-gopher-claw
+	// Project dirs look like: -home-user-Github-my-project
 	// We want to reconstruct the actual directory path and return
 	// everything after common parent dirs (home, username, Github, etc.)
 	if strings.HasPrefix(base, "-") {

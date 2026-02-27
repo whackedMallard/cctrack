@@ -13,12 +13,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kylecalbert/cctrack/internal/api"
-	"github.com/kylecalbert/cctrack/internal/config"
-	"github.com/kylecalbert/cctrack/internal/hub"
-	"github.com/kylecalbert/cctrack/internal/parser"
-	"github.com/kylecalbert/cctrack/internal/store"
-	"github.com/kylecalbert/cctrack/internal/watcher"
+	"github.com/ksred/cctrack/internal/api"
+	"github.com/ksred/cctrack/internal/config"
+	"github.com/ksred/cctrack/internal/hub"
+	"github.com/ksred/cctrack/internal/parser"
+	"github.com/ksred/cctrack/internal/store"
+	"github.com/ksred/cctrack/internal/watcher"
 	"github.com/spf13/cobra"
 )
 

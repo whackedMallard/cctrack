@@ -101,8 +101,9 @@ var serveCmd = &cobra.Command{
 		apiHandler.RegisterRoutes(mux)
 		mux.Handle("/", api.SPAHandler(webFS))
 
-		addr := fmt.Sprintf(":%d", cfg.Port)
-		srv := &http.Server{Addr: addr, Handler: mux}
+		addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
+		handler := securityHeadersMiddleware(cfg.Port, mux)
+		srv := &http.Server{Addr: addr, Handler: handler}
 
 		// Open browser
 		if cfg.OpenBrowserOnServe {
@@ -130,6 +131,28 @@ var serveCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// securityHeadersMiddleware adds security headers to all responses and blocks
+// cross-origin requests from origins other than the dashboard itself.
+func securityHeadersMiddleware(port int, next http.Handler) http.Handler {
+	localhostOrigin := fmt.Sprintf("http://localhost:%d", port)
+	loopbackOrigin := fmt.Sprintf("http://127.0.0.1:%d", port)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'")
+
+		// Block cross-origin requests: only allow the dashboard's own origins.
+		// Same-origin requests do not send an Origin header, so empty origin is allowed.
+		origin := r.Header.Get("Origin")
+		if origin != "" && origin != localhostOrigin && origin != loopbackOrigin {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func openBrowser(url string) {

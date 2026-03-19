@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -223,7 +224,10 @@ func (a *API) handleSessionRequests(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // local-only server
+		OriginPatterns: []string{
+			fmt.Sprintf("localhost:%d", a.cfg.Port),
+			fmt.Sprintf("127.0.0.1:%d", a.cfg.Port),
+		},
 	})
 	if err != nil {
 		log.Printf("WebSocket accept error: %v", err)

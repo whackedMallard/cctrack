@@ -52,7 +52,6 @@ func TestWebSocket_AllowsSameOrigin(t *testing.T) {
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 
-	// Discover actual port and update config so OriginPatterns match
 	actualPort := ts.Listener.Addr().(*net.TCPAddr).Port
 	a.cfg.Port = actualPort
 
@@ -98,7 +97,6 @@ func TestWebSocket_RejectsCrossOrigin(t *testing.T) {
 	a, mux, cleanup := newTestAPI(t)
 	defer cleanup()
 
-	// Use a fixed port for OriginPatterns — cross-origin won't match regardless
 	a.cfg.Port = 9999
 
 	ts := httptest.NewServer(mux)
@@ -120,7 +118,6 @@ func TestWebSocket_RejectsCrossOrigin(t *testing.T) {
 
 func TestValidateLogDir_ValidAbsolutePath(t *testing.T) {
 	home, _ := os.UserHomeDir()
-	// Use a directory that definitely exists under home
 	err := validateLogDir(home)
 	if err != nil {
 		t.Errorf("home dir should be valid: %v", err)
@@ -128,7 +125,6 @@ func TestValidateLogDir_ValidAbsolutePath(t *testing.T) {
 }
 
 func TestValidateLogDir_ValidTildePath(t *testing.T) {
-	// ~/ expands to home, which exists
 	err := validateLogDir("~/")
 	if err != nil {
 		t.Errorf("~/ should be valid: %v", err)
@@ -157,7 +153,6 @@ func TestValidateLogDir_RejectsRelativePath(t *testing.T) {
 
 func TestValidateLogDir_RejectsTraversal(t *testing.T) {
 	home, _ := os.UserHomeDir()
-	// Path that starts in home but traverses out
 	traversal := filepath.Join(home, "..", "..", "etc")
 	err := validateLogDir(traversal)
 	if err == nil {
@@ -177,7 +172,6 @@ func TestValidateLogDir_RejectsNonexistent(t *testing.T) {
 }
 
 func TestValidateLogDir_RejectsFile(t *testing.T) {
-	// Create a temp file (not a directory) under home
 	home, _ := os.UserHomeDir()
 	tmpFile := filepath.Join(home, ".cctrack-test-file-tmp")
 	if err := os.WriteFile(tmpFile, []byte("test"), 0600); err != nil {
@@ -194,7 +188,7 @@ func TestValidateLogDir_RejectsFile(t *testing.T) {
 	}
 }
 
-// --- P1-1: POST /api/v1/settings integration test ---
+// --- P1-1: POST /api/v1/settings integration tests ---
 
 func TestPostSettings_RejectsInvalidLogDir(t *testing.T) {
 	_, mux, cleanup := newTestAPI(t)
@@ -242,14 +236,12 @@ func TestInternalError_HidesDetails(t *testing.T) {
 		t.Errorf("expected generic error message, got %q", body)
 	}
 
-	// Ensure the real error is NOT in the response body
 	if strings.Contains(body, "permission") {
 		t.Error("response body leaks the real error")
 	}
 }
 
 func TestSummaryEndpoint_ReturnsGenericErrorOnFailure(t *testing.T) {
-	// Create an API backed by an already-closed store to force errors
 	s, err := store.Open(t.TempDir() + "/test.db")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -263,7 +255,6 @@ func TestSummaryEndpoint_ReturnsGenericErrorOnFailure(t *testing.T) {
 	mux := http.NewServeMux()
 	a.RegisterRoutes(mux)
 
-	// Close the store to force DB errors
 	s.Close()
 
 	req := httptest.NewRequest("GET", "/api/v1/summary", nil)
@@ -277,5 +268,37 @@ func TestSummaryEndpoint_ReturnsGenericErrorOnFailure(t *testing.T) {
 	body := strings.TrimSpace(rec.Body.String())
 	if body != "internal server error" {
 		t.Errorf("expected generic error, got %q", body)
+	}
+}
+
+// --- P2: Body size limit tests ---
+
+func TestPostSettings_RejectsOversizedBody(t *testing.T) {
+	_, mux, cleanup := newTestAPI(t)
+	defer cleanup()
+
+	huge := `{"monthly_budget_usd":` + strings.Repeat("1", 1<<20) + `}`
+	req := httptest.NewRequest("POST", "/api/v1/settings", strings.NewReader(huge))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for oversized body, got %d", rec.Code)
+	}
+}
+
+func TestPostSettings_AcceptsNormalBody(t *testing.T) {
+	_, mux, cleanup := newTestAPI(t)
+	defer cleanup()
+
+	body := strings.NewReader(`{"monthly_budget_usd": 50.0}`)
+	req := httptest.NewRequest("POST", "/api/v1/settings", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for normal body, got %d; body: %s", rec.Code, rec.Body.String())
 	}
 }

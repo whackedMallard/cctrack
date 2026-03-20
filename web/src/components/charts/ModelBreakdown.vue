@@ -1,7 +1,7 @@
 <template>
   <div class="model-card">
     <div class="chart-header">
-      <div class="chart-title">Spend by Model</div>
+      <div class="chart-title">Spend by Model — All Time</div>
       <div class="chart-meta" v-if="totalCost > 0">{{ formatCostDisplay(totalCost) }} total</div>
     </div>
     <div class="model-bars">

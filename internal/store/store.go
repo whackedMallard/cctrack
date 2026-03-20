@@ -70,10 +70,43 @@ func (s *Store) migrate() error {
 			FOREIGN KEY (session_id) REFERENCES sessions(id)
 		);
 
+		CREATE TABLE IF NOT EXISTS session_branches (
+			session_id        TEXT    NOT NULL,
+			branch            TEXT    NOT NULL DEFAULT 'No repo',
+			first_seen        TEXT    NOT NULL,
+			last_seen         TEXT    NOT NULL,
+			total_input       INTEGER NOT NULL DEFAULT 0,
+			total_output      INTEGER NOT NULL DEFAULT 0,
+			total_cache_read  INTEGER NOT NULL DEFAULT 0,
+			total_cache_write INTEGER NOT NULL DEFAULT 0,
+			total_cost        REAL    NOT NULL DEFAULT 0,
+			PRIMARY KEY (session_id, branch),
+			FOREIGN KEY (session_id) REFERENCES sessions(id)
+		);
+
 		CREATE INDEX IF NOT EXISTS idx_sessions_last_activity ON sessions(last_activity);
 		CREATE INDEX IF NOT EXISTS idx_sessions_total_cost ON sessions(total_cost);
 		CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at);
 		CREATE INDEX IF NOT EXISTS idx_requests_session_id ON requests(session_id);
+		CREATE INDEX IF NOT EXISTS idx_session_branches_last_seen ON session_branches(last_seen);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// One-time migration: if any sessions lack corresponding session_branches rows,
+	// clear ALL derived data to force a full re-parse that populates branch info.
+	// We must delete everything (not just orphans) because upserts are additive —
+	// a partial re-parse would double-count sessions that already have data.
+	var orphanCount int
+	s.db.QueryRow(`SELECT COUNT(*) FROM sessions s WHERE NOT EXISTS
+		(SELECT 1 FROM session_branches sb WHERE sb.session_id = s.id)`).Scan(&orphanCount)
+	if orphanCount > 0 {
+		s.db.Exec("DELETE FROM session_branches")
+		s.db.Exec("DELETE FROM requests")
+		s.db.Exec("DELETE FROM sessions")
+		s.db.Exec("DELETE FROM file_offsets")
+	}
+
+	return nil
 }

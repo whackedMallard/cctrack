@@ -11,6 +11,10 @@
           <tr>
             <th style="width:40px">#</th>
             <th>Session</th>
+            <th class="sortable" @click="store.setSort('branch')">
+              Branch
+              <span v-if="store.sortBy === 'branch'" class="sort-arrow">{{ store.sortDir === 'desc' ? '↓' : '↑' }}</span>
+            </th>
             <th class="sortable" @click="store.setSort('model')">
               Model
               <span v-if="store.sortBy === 'model'" class="sort-arrow">{{ store.sortDir === 'desc' ? '↓' : '↑' }}</span>

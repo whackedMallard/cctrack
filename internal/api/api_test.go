@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -300,5 +301,63 @@ func TestPostSettings_AcceptsNormalBody(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200 for normal body, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// --- Branch tracking: sessions endpoint returns branch field ---
+
+func TestSessionsEndpoint_ReturnsBranchField(t *testing.T) {
+	a, mux, cleanup := newTestAPI(t)
+	defer cleanup()
+
+	// Insert a session and a session_branch row directly via the store
+	err := a.store.UpsertSession(store.SessionDelta{
+		ID: "sess-api-test", Project: "test-proj", Slug: "test-slug",
+		Model: "claude-sonnet-4-20250514", Timestamp: "2026-03-19T10:00:00Z",
+		DeltaInput: 100, DeltaOutput: 50, DeltaCost: 0.01,
+	})
+	if err != nil {
+		t.Fatalf("UpsertSession: %v", err)
+	}
+	err = a.store.UpsertSessionBranch(store.SessionDelta{
+		ID: "sess-api-test", GitBranch: "feat/api-branch",
+		Timestamp:  "2026-03-19T10:00:00Z",
+		DeltaInput: 100, DeltaOutput: 50, DeltaCost: 0.01,
+	}, "2026-03-19T10:00:00Z")
+	if err != nil {
+		t.Fatalf("UpsertSessionBranch: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/sessions", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Sessions []struct {
+			ID     string `json:"id"`
+			Branch string `json:"branch"`
+		} `json:"sessions"`
+		Total int `json:"total"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if resp.Total != 1 {
+		t.Fatalf("expected total=1, got %d", resp.Total)
+	}
+	if len(resp.Sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(resp.Sessions))
+	}
+	s := resp.Sessions[0]
+	if s.ID != "sess-api-test" {
+		t.Errorf("session id: got %q, want %q", s.ID, "sess-api-test")
+	}
+	if s.Branch != "feat/api-branch" {
+		t.Errorf("branch: got %q, want %q", s.Branch, "feat/api-branch")
 	}
 }

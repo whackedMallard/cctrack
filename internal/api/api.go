@@ -101,7 +101,7 @@ func (a *API) handleSessions(w http.ResponseWriter, r *http.Request) {
 		dir = "desc"
 	}
 
-	sessions, total, err := a.store.ListSessions(limit, offset, sort, dir)
+	sessions, total, err := a.store.ListSessionBranches(limit, offset, sort, dir)
 	if err != nil {
 		internalError(w, "sessions", err)
 		return

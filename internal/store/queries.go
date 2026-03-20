@@ -119,9 +119,10 @@ func (s *Store) GetDailySummary(days int) ([]DailySpend, error) {
 }
 
 func (s *Store) TopSessions(n int) ([]Session, error) {
-	rows, err := s.db.Query(`SELECT id, project, slug, model, started_at, last_activity,
-		total_input, total_output, total_cache_read, total_cache_write, total_cost
-		FROM sessions ORDER BY total_cost DESC LIMIT ?`, n)
+	rows, err := s.db.Query(`SELECT s.id, s.project, s.slug, s.model, s.started_at, s.last_activity,
+		s.total_input, s.total_output, s.total_cache_read, s.total_cache_write, s.total_cost,
+		COALESCE((SELECT sb.branch FROM session_branches sb WHERE sb.session_id = s.id ORDER BY sb.last_seen DESC LIMIT 1), '')
+		FROM sessions s ORDER BY s.total_cost DESC LIMIT ?`, n)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +134,7 @@ func (s *Store) TopSessions(n int) ([]Session, error) {
 		if err := rows.Scan(&sess.ID, &sess.Project, &sess.Slug, &sess.Model,
 			&sess.StartedAt, &sess.LastActivity,
 			&sess.TotalInput, &sess.TotalOutput, &sess.TotalCacheRead, &sess.TotalCacheWrite,
-			&sess.TotalCost); err != nil {
+			&sess.TotalCost, &sess.Branch); err != nil {
 			return nil, err
 		}
 		sessions = append(sessions, sess)
@@ -145,9 +146,10 @@ func (s *Store) TopSessions(n int) ([]Session, error) {
 }
 
 func (s *Store) RecentSessions(n int) ([]Session, error) {
-	rows, err := s.db.Query(`SELECT id, project, slug, model, started_at, last_activity,
-		total_input, total_output, total_cache_read, total_cache_write, total_cost
-		FROM sessions ORDER BY last_activity DESC LIMIT ?`, n)
+	rows, err := s.db.Query(`SELECT s.id, s.project, s.slug, s.model, s.started_at, s.last_activity,
+		s.total_input, s.total_output, s.total_cache_read, s.total_cache_write, s.total_cost,
+		COALESCE((SELECT sb.branch FROM session_branches sb WHERE sb.session_id = s.id ORDER BY sb.last_seen DESC LIMIT 1), '')
+		FROM sessions s ORDER BY s.last_activity DESC LIMIT ?`, n)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +161,7 @@ func (s *Store) RecentSessions(n int) ([]Session, error) {
 		if err := rows.Scan(&sess.ID, &sess.Project, &sess.Slug, &sess.Model,
 			&sess.StartedAt, &sess.LastActivity,
 			&sess.TotalInput, &sess.TotalOutput, &sess.TotalCacheRead, &sess.TotalCacheWrite,
-			&sess.TotalCost); err != nil {
+			&sess.TotalCost, &sess.Branch); err != nil {
 			return nil, err
 		}
 		sessions = append(sessions, sess)

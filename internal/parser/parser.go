@@ -119,6 +119,16 @@ func (p *Parser) ParseFile(path string) ([]string, error) {
 		orderCounter++
 	}
 
+	// Per-branch token accumulator within a session
+	type branchAgg struct {
+		firstSeen  string
+		lastSeen   string
+		input      int64
+		output     int64
+		cacheRead  int64
+		cacheWrite int64
+	}
+
 	// Aggregate token usage per session
 	type sessionAgg struct {
 		model     string
@@ -129,6 +139,7 @@ func (p *Parser) ParseFile(path string) ([]string, error) {
 		output    int64
 		cacheRead int64
 		cacheWrite int64
+		branches  map[string]*branchAgg // key: branch name
 	}
 	sessions := make(map[string]*sessionAgg)
 
@@ -153,7 +164,7 @@ func (p *Parser) ParseFile(path string) ([]string, error) {
 
 		agg, ok := sessions[sid]
 		if !ok {
-			agg = &sessionAgg{sessionID: sid}
+			agg = &sessionAgg{sessionID: sid, branches: make(map[string]*branchAgg)}
 			sessions[sid] = agg
 		}
 
@@ -171,6 +182,27 @@ func (p *Parser) ParseFile(path string) ([]string, error) {
 		agg.output += u.OutputTokens
 		agg.cacheRead += u.CacheReadInputTokens
 		agg.cacheWrite += u.CacheCreationInputTokens
+
+		// Accumulate per-branch token data
+		branch := event.GitBranch
+		if branch == "" {
+			branch = "No repo"
+		}
+		ba, ok := agg.branches[branch]
+		if !ok {
+			ba = &branchAgg{firstSeen: event.Timestamp, lastSeen: event.Timestamp}
+			agg.branches[branch] = ba
+		}
+		if event.Timestamp < ba.firstSeen {
+			ba.firstSeen = event.Timestamp
+		}
+		if event.Timestamp > ba.lastSeen {
+			ba.lastSeen = event.Timestamp
+		}
+		ba.input += u.InputTokens
+		ba.output += u.OutputTokens
+		ba.cacheRead += u.CacheReadInputTokens
+		ba.cacheWrite += u.CacheCreationInputTokens
 
 		// Store per-request record if we have a requestID
 		if requestID != "" {
@@ -231,6 +263,35 @@ func (p *Parser) ParseFile(path string) ([]string, error) {
 			log.Printf("Warning: failed to upsert session %s: %v", sid, err)
 			continue
 		}
+
+		// Upsert per-branch deltas
+		for branch, ba := range agg.branches {
+			branchUsage := calculator.TokenUsage{
+				InputTokens:      ba.input,
+				OutputTokens:     ba.output,
+				CacheReadTokens:  ba.cacheRead,
+				CacheWriteTokens: ba.cacheWrite,
+			}
+			branchCost := calculator.Calculate(agg.model, branchUsage)
+			branchDelta := store.SessionDelta{
+				ID:              sid,
+				Project:         project,
+				Slug:            agg.slug,
+				Model:           agg.model,
+				GitBranch:       branch,
+				Timestamp:       ba.lastSeen,
+				DeltaInput:      ba.input,
+				DeltaOutput:     ba.output,
+				DeltaCacheRead:  ba.cacheRead,
+				DeltaCacheWrite: ba.cacheWrite,
+				DeltaCost:       branchCost.TotalCost,
+			}
+			// Use firstSeen from branchAgg for upsert
+			if err := p.store.UpsertSessionBranch(branchDelta, ba.firstSeen); err != nil {
+				log.Printf("Warning: failed to upsert session branch %s/%s: %v", sid, branch, err)
+			}
+		}
+
 		affectedIDs = append(affectedIDs, sid)
 	}
 

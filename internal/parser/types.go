@@ -8,6 +8,7 @@ type RawEvent struct {
 	RequestID string     `json:"requestId"`
 	Timestamp string     `json:"timestamp"`
 	UUID      string     `json:"uuid"`
+	GitBranch string     `json:"gitBranch"`
 	Message   RawMessage `json:"message"`
 }
 

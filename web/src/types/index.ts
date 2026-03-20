@@ -68,8 +68,11 @@ export interface Session {
   project: string
   slug: string
   model: string
+  branch?: string
   started_at: string
   last_activity: string
+  first_seen?: string
+  last_seen?: string
   total_input: number
   total_output: number
   total_cache_read: number

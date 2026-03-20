@@ -14,6 +14,10 @@
         <span class="meta-label">Project</span>
         <span class="meta-value">{{ session.project }}</span>
       </div>
+      <div class="meta-row" v-if="session.branch">
+        <span class="meta-label">Branch</span>
+        <span class="meta-value mono">{{ session.branch }}</span>
+      </div>
       <div class="meta-row" v-if="session.slug">
         <span class="meta-label">Slug</span>
         <span class="meta-value mono">{{ session.slug }}</span>

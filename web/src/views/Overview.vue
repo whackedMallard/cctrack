@@ -72,6 +72,7 @@
           <tr>
             <th style="width:40px">#</th>
             <th>Session</th>
+            <th>Branch</th>
             <th>Model</th>
             <th>Last Active</th>
             <th class="right">Tokens</th>
@@ -100,6 +101,7 @@
           <tr>
             <th style="width:40px">#</th>
             <th>Session</th>
+            <th>Branch</th>
             <th>Model</th>
             <th>Last Active</th>
             <th class="right">Tokens</th>

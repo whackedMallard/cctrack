@@ -7,6 +7,7 @@ type Session struct {
 	Project        string  `json:"project"`
 	Slug           string  `json:"slug"`
 	Model          string  `json:"model"`
+	Branch         string  `json:"branch,omitempty"`
 	StartedAt      string  `json:"started_at"`
 	LastActivity   string  `json:"last_activity"`
 	TotalInput     int64   `json:"total_input"`
@@ -25,6 +26,7 @@ type SessionDelta struct {
 	Project        string
 	Slug           string
 	Model          string
+	GitBranch      string
 	Timestamp      string
 	DeltaInput     int64
 	DeltaOutput    int64
@@ -55,14 +57,15 @@ func (s *Store) UpsertSession(d SessionDelta) error {
 }
 
 func (s *Store) GetSession(id string) (*Session, error) {
-	row := s.db.QueryRow(`SELECT id, project, slug, model, started_at, last_activity,
-		total_input, total_output, total_cache_read, total_cache_write, total_cost
-		FROM sessions WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT s.id, s.project, s.slug, s.model, s.started_at, s.last_activity,
+		s.total_input, s.total_output, s.total_cache_read, s.total_cache_write, s.total_cost,
+		COALESCE((SELECT sb.branch FROM session_branches sb WHERE sb.session_id = s.id ORDER BY sb.last_seen DESC LIMIT 1), '')
+		FROM sessions s WHERE s.id = ?`, id)
 	sess := &Session{}
 	err := row.Scan(&sess.ID, &sess.Project, &sess.Slug, &sess.Model,
 		&sess.StartedAt, &sess.LastActivity,
 		&sess.TotalInput, &sess.TotalOutput, &sess.TotalCacheRead, &sess.TotalCacheWrite,
-		&sess.TotalCost)
+		&sess.TotalCost, &sess.Branch)
 	if err != nil {
 		return nil, err
 	}
@@ -153,9 +156,10 @@ func (s *Store) ListSessions(limit, offset int, sortBy, sortDir string) ([]Sessi
 		return nil, 0, err
 	}
 
-	query := fmt.Sprintf(`SELECT id, project, slug, model, started_at, last_activity,
-		total_input, total_output, total_cache_read, total_cache_write, total_cost
-		FROM sessions ORDER BY %s %s LIMIT ? OFFSET ?`, col, dir)
+	query := fmt.Sprintf(`SELECT s.id, s.project, s.slug, s.model, s.started_at, s.last_activity,
+		s.total_input, s.total_output, s.total_cache_read, s.total_cache_write, s.total_cost,
+		COALESCE((SELECT sb.branch FROM session_branches sb WHERE sb.session_id = s.id ORDER BY sb.last_seen DESC LIMIT 1), '')
+		FROM sessions s ORDER BY %s %s LIMIT ? OFFSET ?`, col, dir)
 
 	rows, err := s.db.Query(query, limit, offset)
 	if err != nil {
@@ -169,7 +173,7 @@ func (s *Store) ListSessions(limit, offset int, sortBy, sortDir string) ([]Sessi
 		if err := rows.Scan(&sess.ID, &sess.Project, &sess.Slug, &sess.Model,
 			&sess.StartedAt, &sess.LastActivity,
 			&sess.TotalInput, &sess.TotalOutput, &sess.TotalCacheRead, &sess.TotalCacheWrite,
-			&sess.TotalCost); err != nil {
+			&sess.TotalCost, &sess.Branch); err != nil {
 			return nil, 0, err
 		}
 		sessions = append(sessions, sess)
@@ -178,4 +182,117 @@ func (s *Store) ListSessions(limit, offset int, sortBy, sortDir string) ([]Sessi
 		return nil, 0, err
 	}
 	return sessions, total, nil
+}
+
+// --- Session-branch tracking ---
+
+type SessionBranch struct {
+	SessionID       string  `json:"session_id"`
+	Branch          string  `json:"branch"`
+	FirstSeen       string  `json:"first_seen"`
+	LastSeen        string  `json:"last_seen"`
+	TotalInput      int64   `json:"total_input"`
+	TotalOutput     int64   `json:"total_output"`
+	TotalCacheRead  int64   `json:"total_cache_read"`
+	TotalCacheWrite int64   `json:"total_cache_write"`
+	TotalCost       float64 `json:"total_cost"`
+}
+
+// SessionBranchRow is the joined query result for the Sessions page.
+// Each row is a (session, branch) pair with session metadata.
+type SessionBranchRow struct {
+	ID              string  `json:"id"`
+	Project         string  `json:"project"`
+	Slug            string  `json:"slug"`
+	Model           string  `json:"model"`
+	Branch          string  `json:"branch"`
+	FirstSeen       string  `json:"first_seen"`
+	LastSeen        string  `json:"last_seen"`
+	TotalInput      int64   `json:"total_input"`
+	TotalOutput     int64   `json:"total_output"`
+	TotalCacheRead  int64   `json:"total_cache_read"`
+	TotalCacheWrite int64   `json:"total_cache_write"`
+	TotalCost       float64 `json:"total_cost"`
+}
+
+// UpsertSessionBranch adds token deltas to a (session, branch) row or creates one.
+// firstSeen is passed separately because SessionDelta.Timestamp represents last_seen.
+func (s *Store) UpsertSessionBranch(d SessionDelta, firstSeen string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO session_branches (session_id, branch, first_seen, last_seen,
+			total_input, total_output, total_cache_read, total_cache_write, total_cost)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(session_id, branch) DO UPDATE SET
+			last_seen     = CASE WHEN excluded.last_seen > session_branches.last_seen THEN excluded.last_seen ELSE session_branches.last_seen END,
+			first_seen    = CASE WHEN excluded.first_seen < session_branches.first_seen THEN excluded.first_seen ELSE session_branches.first_seen END,
+			total_input   = session_branches.total_input   + excluded.total_input,
+			total_output  = session_branches.total_output  + excluded.total_output,
+			total_cache_read  = session_branches.total_cache_read  + excluded.total_cache_read,
+			total_cache_write = session_branches.total_cache_write + excluded.total_cache_write,
+			total_cost    = session_branches.total_cost    + excluded.total_cost
+	`, d.ID, d.GitBranch, firstSeen, d.Timestamp,
+		d.DeltaInput, d.DeltaOutput, d.DeltaCacheRead, d.DeltaCacheWrite, d.DeltaCost)
+	return err
+}
+
+// allowedBranchSortColumns maps API sort keys to SQL expressions for session_branches queries.
+var allowedBranchSortColumns = map[string]string{
+	"cost":    "sb.total_cost",
+	"date":    "sb.last_seen",
+	"started": "sb.first_seen",
+	"tokens":  "(sb.total_input + sb.total_output + sb.total_cache_read + sb.total_cache_write)",
+	"model":   "s.model",
+	"project": "s.project",
+	"branch":  "sb.branch",
+}
+
+// ListSessionBranches returns paginated (session, branch) rows joined with session metadata.
+func (s *Store) ListSessionBranches(limit, offset int, sortBy, sortDir string) ([]SessionBranchRow, int, error) {
+	col, ok := allowedBranchSortColumns[sortBy]
+	if !ok {
+		col = "sb.total_cost"
+	}
+	dir := "DESC"
+	if sortDir == "asc" {
+		dir = "ASC"
+	}
+
+	var total int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM session_branches").Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	query := fmt.Sprintf(`
+		SELECT s.id, s.project, s.slug, s.model, sb.branch,
+		       sb.first_seen, sb.last_seen,
+		       sb.total_input, sb.total_output,
+		       sb.total_cache_read, sb.total_cache_write,
+		       sb.total_cost
+		FROM session_branches sb
+		JOIN sessions s ON s.id = sb.session_id
+		ORDER BY %s %s
+		LIMIT ? OFFSET ?`, col, dir)
+
+	rows, err := s.db.Query(query, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var results []SessionBranchRow
+	for rows.Next() {
+		var r SessionBranchRow
+		if err := rows.Scan(&r.ID, &r.Project, &r.Slug, &r.Model, &r.Branch,
+			&r.FirstSeen, &r.LastSeen,
+			&r.TotalInput, &r.TotalOutput, &r.TotalCacheRead, &r.TotalCacheWrite,
+			&r.TotalCost); err != nil {
+			return nil, 0, err
+		}
+		results = append(results, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return results, total, nil
 }

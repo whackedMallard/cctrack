@@ -7,9 +7,12 @@
         <span v-if="isActive" class="live-badge">Live</span>
       </div>
     </td>
+    <td class="branch-cell">
+      <span v-if="session.branch" class="branch-tag">{{ session.branch }}</span>
+    </td>
     <td><Badge :label="formatModel(session.model)" /></td>
-    <td class="time-cell">{{ formatDate(session.started_at) }}</td>
-    <td class="time-cell">{{ formatDate(session.last_activity) }}</td>
+    <td class="time-cell">{{ formatDate(session.first_seen || session.started_at) }}</td>
+    <td class="time-cell">{{ formatDate(session.last_seen || session.last_activity) }}</td>
     <td class="token-cell">{{ formatTokens(totalTokens) }}</td>
     <td class="cost-cell" :class="{ top: rank === 1 }">{{ formatCostDisplay(session.total_cost) }}</td>
   </tr>
@@ -89,6 +92,23 @@ tr:first-child .rank { color: var(--amber-500); }
   background: var(--status-live);
   padding: 2px 5px;
   line-height: 1.4;
+}
+
+.branch-cell {
+  max-width: 160px;
+}
+.branch-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  padding: 2px 7px;
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
 }
 
 .time-cell {

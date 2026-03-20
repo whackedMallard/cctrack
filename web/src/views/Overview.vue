@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="page-header">
-      <h1 class="page-title">Overview</h1>
+      <h1 class="page-title">Overview (USD)</h1>
       <div class="page-date">
         {{ currentDate }}<span v-if="lastUpdated"> — {{ lastUpdated }}</span>
       </div>
@@ -53,6 +53,12 @@
     <div class="insights-row" v-if="models.length || heatmap.length">
       <ModelBreakdown :models="models" />
       <ActivityHeatmap :cells="heatmap" />
+    </div>
+
+    <!-- Extended heatmaps -->
+    <div class="heatmaps-extended" v-if="heatmap30.length || heatmap365.length">
+      <DateActivityHeatmap :cells="heatmap30" title="Activity Heatmap — Last 30 Days" variant="30day" />
+      <DateActivityHeatmap :cells="heatmap365" title="Activity Heatmap — Last 365 Days" variant="365day" />
     </div>
 
     <div class="section-header" v-if="store.recentSessions.length">
@@ -126,16 +132,19 @@ import DailySpendChart from '../components/charts/DailySpendChart.vue'
 import TokenDonut from '../components/charts/TokenDonut.vue'
 import ModelBreakdown from '../components/charts/ModelBreakdown.vue'
 import ActivityHeatmap from '../components/charts/ActivityHeatmap.vue'
+import DateActivityHeatmap from '../components/charts/DateActivityHeatmap.vue'
 import SessionRow from '../components/domain/SessionRow.vue'
 import SessionDetail from '../components/domain/SessionDetail.vue'
 import SlideOver from '../components/primitives/SlideOver.vue'
-import type { Session, ModelSummary, HeatmapCell } from '../types'
-import { fetchSession, fetchModels, fetchHeatmap } from '../api'
+import type { Session, ModelSummary, HeatmapCell, DailyHeatmapCell } from '../types'
+import { fetchSession, fetchModels, fetchHeatmap, fetchCalendarHeatmap } from '../api'
 
 const store = useDashboardStore()
 const selectedSession = ref<Session | null>(null)
 const models = ref<ModelSummary[]>([])
 const heatmap = ref<HeatmapCell[]>([])
+const heatmap30 = ref<DailyHeatmapCell[]>([])
+const heatmap365 = ref<DailyHeatmapCell[]>([])
 
 const currentDate = computed(() => {
   const d = new Date()
@@ -185,10 +194,18 @@ async function openSession(id: string) {
 }
 
 onMounted(async () => {
-  if (!store.loaded) store.load()
+  if (!store.loaded) await store.load()
+  // Fetch existing data first — don't let new heatmap fetches break existing functionality
   const [m, h] = await Promise.all([fetchModels(), fetchHeatmap()])
   models.value = m || []
   heatmap.value = h || []
+  // Extended heatmaps fetched separately so failures don't block the page
+  const [h30, h365] = await Promise.all([
+    fetchCalendarHeatmap(31).catch(() => []),
+    fetchCalendarHeatmap(365).catch(() => []),
+  ])
+  heatmap30.value = h30 || []
+  heatmap365.value = h365 || []
 })
 </script>
 
@@ -231,6 +248,13 @@ onMounted(async () => {
 .insights-row {
   display: grid;
   grid-template-columns: 340px 1fr;
+  gap: var(--space-5);
+  margin-bottom: var(--space-8);
+}
+
+.heatmaps-extended {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-5);
   margin-bottom: var(--space-8);
 }

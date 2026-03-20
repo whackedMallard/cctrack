@@ -353,10 +353,69 @@ func (s *Store) GetModelBreakdown() ([]ModelSummary, error) {
 	return results, nil
 }
 
+// DailyHeatmapCell represents aggregated cost for a single calendar date.
+// Used by the calendar heatmap endpoint (30-day and 365-day views).
+type DailyHeatmapCell struct {
+	Date string  `json:"date"` // "2006-01-02"
+	Cost float64 `json:"cost"`
+}
+
+// GetDailyHeatmap returns per-date aggregated cost data for the last N days.
+// Results are sorted by date ASC (oldest first).
+func (s *Store) GetDailyHeatmap(days int) ([]DailyHeatmapCell, error) {
+	since := startOfDay(time.Now()).AddDate(0, 0, -(days - 1))
+
+	rows, err := s.db.Query(`
+		SELECT last_activity, total_cost
+		FROM sessions
+		WHERE last_activity != '' AND last_activity >= ?`,
+		since.Format(time.RFC3339))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Aggregate costs by date in local time
+	agg := make(map[string]float64)
+	for rows.Next() {
+		var ts string
+		var cost float64
+		if err := rows.Scan(&ts, &cost); err != nil {
+			return nil, err
+		}
+		t := parseLocalTime(ts)
+		if t.IsZero() {
+			continue
+		}
+		agg[t.Format("2006-01-02")] += cost
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	var cells []DailyHeatmapCell
+	for date, cost := range agg {
+		cells = append(cells, DailyHeatmapCell{Date: date, Cost: cost})
+	}
+	// Sort by date ASC
+	sort.Slice(cells, func(i, j int) bool {
+		return cells[i].Date < cells[j].Date
+	})
+	return cells, nil
+}
+
 // --- Feature: Activity Heatmap ---
 
 type HeatmapCell struct {
 	Day  int     `json:"day"`  // 0=Sunday .. 6=Saturday
+	Hour int     `json:"hour"` // 0..23
+	Cost float64 `json:"cost"`
+}
+
+// DateHeatmapCell represents cost for a specific calendar date and hour.
+// Used by the extended 30-day and 365-day heatmaps.
+type DateHeatmapCell struct {
+	Date string  `json:"date"` // "2006-01-02"
 	Hour int     `json:"hour"` // 0..23
 	Cost float64 `json:"cost"`
 }
@@ -399,6 +458,55 @@ func (s *Store) GetActivityHeatmap() ([]HeatmapCell, error) {
 	sort.Slice(cells, func(i, j int) bool {
 		if cells[i].Day != cells[j].Day {
 			return cells[i].Day < cells[j].Day
+		}
+		return cells[i].Hour < cells[j].Hour
+	})
+	return cells, nil
+}
+
+// GetDateHeatmap returns per-date, per-hour cost data for the last N days.
+// Results are sorted by date ASC then hour ASC (oldest first).
+func (s *Store) GetDateHeatmap(days int) ([]DateHeatmapCell, error) {
+	since := startOfDay(time.Now()).AddDate(0, 0, -(days - 1))
+
+	rows, err := s.db.Query(`
+		SELECT last_activity, total_cost
+		FROM sessions
+		WHERE last_activity != '' AND last_activity >= ?`,
+		since.Format(time.RFC3339))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Aggregate costs by {date, hour} in local time
+	type cellKey struct{ date string; hour int }
+	agg := make(map[cellKey]float64)
+	for rows.Next() {
+		var ts string
+		var cost float64
+		if err := rows.Scan(&ts, &cost); err != nil {
+			return nil, err
+		}
+		t := parseLocalTime(ts)
+		if t.IsZero() {
+			continue
+		}
+		k := cellKey{date: t.Format("2006-01-02"), hour: t.Hour()}
+		agg[k] += cost
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	var cells []DateHeatmapCell
+	for k, cost := range agg {
+		cells = append(cells, DateHeatmapCell{Date: k.date, Hour: k.hour, Cost: cost})
+	}
+	// Sort by date ASC, then hour ASC
+	sort.Slice(cells, func(i, j int) bool {
+		if cells[i].Date != cells[j].Date {
+			return cells[i].Date < cells[j].Date
 		}
 		return cells[i].Hour < cells[j].Hour
 	})

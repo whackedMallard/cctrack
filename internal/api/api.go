@@ -41,6 +41,8 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/rates", a.handleRates)
 	mux.HandleFunc("GET /api/v1/models", a.handleModels)
 	mux.HandleFunc("GET /api/v1/heatmap", a.handleHeatmap)
+	mux.HandleFunc("GET /api/v1/heatmap/daily", a.handleDateHeatmap)
+	mux.HandleFunc("GET /api/v1/heatmap/calendar", a.handleCalendarHeatmap)
 	mux.HandleFunc("GET /api/v1/sessions/{id}/requests", a.handleSessionRequests)
 	mux.HandleFunc("GET /api/v1/ws", a.handleWS)
 }
@@ -216,6 +218,26 @@ func (a *API) handleHeatmap(w http.ResponseWriter, r *http.Request) {
 	cells, err := a.store.GetActivityHeatmap()
 	if err != nil {
 		internalError(w, "heatmap", err)
+		return
+	}
+	writeJSON(w, cells)
+}
+
+func (a *API) handleDateHeatmap(w http.ResponseWriter, r *http.Request) {
+	days := queryInt(r, "days", 30)
+	cells, err := a.store.GetDateHeatmap(days)
+	if err != nil {
+		internalError(w, "date-heatmap", err)
+		return
+	}
+	writeJSON(w, cells)
+}
+
+func (a *API) handleCalendarHeatmap(w http.ResponseWriter, r *http.Request) {
+	days := queryInt(r, "days", 30)
+	cells, err := a.store.GetDailyHeatmap(days)
+	if err != nil {
+		internalError(w, "calendar-heatmap", err)
 		return
 	}
 	writeJSON(w, cells)

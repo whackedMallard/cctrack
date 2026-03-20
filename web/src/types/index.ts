@@ -46,6 +46,17 @@ export interface HeatmapCell {
   cost: number
 }
 
+export interface DateHeatmapCell {
+  date: string   // "2006-01-02"
+  hour: number   // 0..23
+  cost: number
+}
+
+export interface DailyHeatmapCell {
+  date: string   // "2006-01-02"
+  cost: number
+}
+
 export interface RequestRecord {
   request_id: string
   session_id: string

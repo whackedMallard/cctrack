@@ -1,4 +1,4 @@
-import type { Summary, SessionsResponse, Session, DailySpend, Settings, ModelRate, ProjectSummary, ProjectMonthly, ModelSummary, HeatmapCell, RequestRecord } from './types'
+import type { Summary, SessionsResponse, Session, DailySpend, Settings, ModelRate, ProjectSummary, ProjectMonthly, ModelSummary, HeatmapCell, DateHeatmapCell, DailyHeatmapCell, RequestRecord } from './types'
 
 const BASE = '/api/v1'
 
@@ -65,6 +65,14 @@ export async function fetchModels(): Promise<ModelSummary[]> {
 
 export async function fetchHeatmap(): Promise<HeatmapCell[]> {
   return get<HeatmapCell[]>('/heatmap')
+}
+
+export async function fetchDateHeatmap(days: number): Promise<DateHeatmapCell[]> {
+  return get<DateHeatmapCell[]>(`/heatmap/daily?days=${days}`)
+}
+
+export async function fetchCalendarHeatmap(days: number): Promise<DailyHeatmapCell[]> {
+  return get<DailyHeatmapCell[]>(`/heatmap/calendar?days=${days}`)
 }
 
 export async function fetchSessionRequests(sessionId: string): Promise<RequestRecord[]> {

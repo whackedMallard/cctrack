@@ -10,17 +10,18 @@
         <thead>
           <tr>
             <th style="width:40px">#</th>
-            <th class="sortable" @click="store.setSort('date')">
-              Session
-              <span v-if="store.sortBy === 'date'" class="sort-arrow">{{ store.sortDir === 'desc' ? '↓' : '↑' }}</span>
-            </th>
+            <th>Session</th>
             <th class="sortable" @click="store.setSort('model')">
               Model
               <span v-if="store.sortBy === 'model'" class="sort-arrow">{{ store.sortDir === 'desc' ? '↓' : '↑' }}</span>
             </th>
             <th class="sortable" @click="store.setSort('started')">
-              Started
+              Created
               <span v-if="store.sortBy === 'started'" class="sort-arrow">{{ store.sortDir === 'desc' ? '↓' : '↑' }}</span>
+            </th>
+            <th class="sortable" @click="store.setSort('date')">
+              Modified
+              <span v-if="store.sortBy === 'date'" class="sort-arrow">{{ store.sortDir === 'desc' ? '↓' : '↑' }}</span>
             </th>
             <th class="right sortable" @click="store.setSort('tokens')">
               Tokens

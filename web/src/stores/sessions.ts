@@ -8,7 +8,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   const total = ref(0)
   const limit = ref(25)
   const offset = ref(0)
-  const sortBy = ref('cost')
+  const sortBy = ref('date')
   const sortDir = ref<'asc' | 'desc'>('desc')
   const selectedSession = ref<Session | null>(null)
   const loading = ref(false)

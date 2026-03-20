@@ -46,6 +46,14 @@ func Load() (*Config, error) {
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
+	// Restore defaults for path fields if JSON had empty strings
+	defaults := DefaultConfig()
+	if cfg.LogDir == "" {
+		cfg.LogDir = defaults.LogDir
+	}
+	if cfg.DBPath == "" {
+		cfg.DBPath = defaults.DBPath
+	}
 	return cfg, nil
 }
 

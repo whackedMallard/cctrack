@@ -56,7 +56,7 @@
     </div>
 
     <div class="section-header" v-if="store.recentSessions.length">
-      <div class="section-title">Recent Sessions</div>
+      <div class="section-title">Recent Sessions — Last 10 Sessions</div>
       <router-link class="view-all" to="/sessions">View all →</router-link>
     </div>
 
@@ -85,7 +85,7 @@
     </div>
 
     <div class="section-header top-section" v-if="store.topSessions.length">
-      <div class="section-title">Most Expensive</div>
+      <div class="section-title">Most Expensive — All Time Top 5</div>
     </div>
 
     <div class="sessions-table-wrap" v-if="store.topSessions.length">

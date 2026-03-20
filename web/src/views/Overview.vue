@@ -136,13 +136,13 @@ import DateActivityHeatmap from '../components/charts/DateActivityHeatmap.vue'
 import SessionRow from '../components/domain/SessionRow.vue'
 import SessionDetail from '../components/domain/SessionDetail.vue'
 import SlideOver from '../components/primitives/SlideOver.vue'
-import type { Session, ModelSummary, HeatmapCell, DailyHeatmapCell } from '../types'
-import { fetchSession, fetchModels, fetchHeatmap, fetchCalendarHeatmap } from '../api'
+import type { Session, ModelSummary, DateHeatmapCell, DailyHeatmapCell } from '../types'
+import { fetchSession, fetchModels, fetchDateHeatmap, fetchCalendarHeatmap } from '../api'
 
 const store = useDashboardStore()
 const selectedSession = ref<Session | null>(null)
 const models = ref<ModelSummary[]>([])
-const heatmap = ref<HeatmapCell[]>([])
+const heatmap = ref<DateHeatmapCell[]>([])
 const heatmap30 = ref<DailyHeatmapCell[]>([])
 const heatmap365 = ref<DailyHeatmapCell[]>([])
 
@@ -195,17 +195,16 @@ async function openSession(id: string) {
 
 onMounted(async () => {
   if (!store.loaded) await store.load()
-  // Fetch existing data first — don't let new heatmap fetches break existing functionality
-  const [m, h] = await Promise.all([fetchModels(), fetchHeatmap()])
-  models.value = m || []
-  heatmap.value = h || []
-  // Extended heatmaps fetched separately so failures don't block the page
-  const [h30, h365] = await Promise.all([
+  const [m, h, h30, h365] = await Promise.all([
+    fetchModels().catch(() => []),
+    fetchDateHeatmap(7).catch(() => []),
     fetchCalendarHeatmap(31).catch(() => []),
     fetchCalendarHeatmap(365).catch(() => []),
   ])
-  heatmap30.value = h30 || []
-  heatmap365.value = h365 || []
+  models.value = m
+  heatmap.value = h
+  heatmap30.value = h30
+  heatmap365.value = h365
 })
 </script>
 

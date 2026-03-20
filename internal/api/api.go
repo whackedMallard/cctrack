@@ -40,7 +40,6 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/projects/monthly", a.handleProjectMonthly)
 	mux.HandleFunc("GET /api/v1/rates", a.handleRates)
 	mux.HandleFunc("GET /api/v1/models", a.handleModels)
-	mux.HandleFunc("GET /api/v1/heatmap", a.handleHeatmap)
 	mux.HandleFunc("GET /api/v1/heatmap/daily", a.handleDateHeatmap)
 	mux.HandleFunc("GET /api/v1/heatmap/calendar", a.handleCalendarHeatmap)
 	mux.HandleFunc("GET /api/v1/sessions/{id}/requests", a.handleSessionRequests)
@@ -212,15 +211,6 @@ func (a *API) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, models)
-}
-
-func (a *API) handleHeatmap(w http.ResponseWriter, r *http.Request) {
-	cells, err := a.store.GetActivityHeatmap()
-	if err != nil {
-		internalError(w, "heatmap", err)
-		return
-	}
-	writeJSON(w, cells)
 }
 
 func (a *API) handleDateHeatmap(w http.ResponseWriter, r *http.Request) {

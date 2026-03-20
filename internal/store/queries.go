@@ -406,62 +406,12 @@ func (s *Store) GetDailyHeatmap(days int) ([]DailyHeatmapCell, error) {
 
 // --- Feature: Activity Heatmap ---
 
-type HeatmapCell struct {
-	Day  int     `json:"day"`  // 0=Sunday .. 6=Saturday
-	Hour int     `json:"hour"` // 0..23
-	Cost float64 `json:"cost"`
-}
-
 // DateHeatmapCell represents cost for a specific calendar date and hour.
 // Used by the extended 30-day and 365-day heatmaps.
 type DateHeatmapCell struct {
 	Date string  `json:"date"` // "2006-01-02"
 	Hour int     `json:"hour"` // 0..23
 	Cost float64 `json:"cost"`
-}
-
-func (s *Store) GetActivityHeatmap() ([]HeatmapCell, error) {
-	// Query raw timestamps — bucket by day-of-week and hour in Go using local time
-	rows, err := s.db.Query(`
-		SELECT last_activity, total_cost
-		FROM sessions
-		WHERE last_activity != ''`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	type cellKey struct{ day, hour int }
-	agg := make(map[cellKey]float64)
-	for rows.Next() {
-		var ts string
-		var cost float64
-		if err := rows.Scan(&ts, &cost); err != nil {
-			return nil, err
-		}
-		t := parseLocalTime(ts)
-		if t.IsZero() {
-			continue
-		}
-		k := cellKey{day: int(t.Weekday()), hour: t.Hour()}
-		agg[k] += cost
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	var cells []HeatmapCell
-	for k, cost := range agg {
-		cells = append(cells, HeatmapCell{Day: k.day, Hour: k.hour, Cost: cost})
-	}
-	// Sort by day, then hour for consistent output
-	sort.Slice(cells, func(i, j int) bool {
-		if cells[i].Day != cells[j].Day {
-			return cells[i].Day < cells[j].Day
-		}
-		return cells[i].Hour < cells[j].Hour
-	})
-	return cells, nil
 }
 
 // GetDateHeatmap returns per-date, per-hour cost data for the last N days.

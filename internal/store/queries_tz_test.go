@@ -89,38 +89,6 @@ func TestGetDailySummary_LocalBucketing(t *testing.T) {
 	}
 }
 
-func TestGetActivityHeatmap_LocalTime(t *testing.T) {
-	s := setupTZTestStore(t)
-	defer s.Close()
-
-	cells, err := s.GetActivityHeatmap()
-	if err != nil {
-		t.Fatalf("GetActivityHeatmap: %v", err)
-	}
-
-	if len(cells) == 0 {
-		t.Fatal("expected non-empty heatmap")
-	}
-
-	// Verify that the cell for "2 hours ago" uses the correct local day-of-week
-	twoHoursAgo := time.Now().Add(-2 * time.Hour)
-	expectedDay := int(twoHoursAgo.Weekday())
-	expectedHour := twoHoursAgo.Hour()
-
-	found := false
-	for _, c := range cells {
-		if c.Day == expectedDay && c.Hour == expectedHour {
-			found = true
-			if !approxEqual(c.Cost, 0.05) {
-				t.Errorf("cell cost = %f, want 0.05", c.Cost)
-			}
-		}
-	}
-	if !found {
-		t.Errorf("no heatmap cell for day=%d hour=%d", expectedDay, expectedHour)
-	}
-}
-
 func TestGetTrends_RFC3339Boundaries(t *testing.T) {
 	s := setupTZTestStore(t)
 	defer s.Close()

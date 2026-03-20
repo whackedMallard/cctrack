@@ -40,12 +40,6 @@ export interface ModelSummary {
   total_tokens: number
 }
 
-export interface HeatmapCell {
-  day: number
-  hour: number
-  cost: number
-}
-
 export interface DateHeatmapCell {
   date: string   // "2006-01-02"
   hour: number   // 0..23

@@ -126,20 +126,6 @@ func TestGetModelBreakdown_RowsErr(t *testing.T) {
 	}
 }
 
-func TestGetActivityHeatmap_RowsErr(t *testing.T) {
-	s := setupTestStore(t)
-	defer s.Close()
-
-	cells, err := s.GetActivityHeatmap()
-	if err != nil {
-		t.Fatalf("GetActivityHeatmap: %v", err)
-	}
-	// Should have at least one cell for the test session
-	if len(cells) == 0 {
-		t.Error("expected non-empty heatmap")
-	}
-}
-
 func TestListSessions_RowsErr(t *testing.T) {
 	s := setupTestStore(t)
 	defer s.Close()

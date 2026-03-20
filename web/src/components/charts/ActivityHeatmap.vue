@@ -1,22 +1,23 @@
 <template>
   <div class="heatmap-card">
     <div class="chart-header">
-      <div class="chart-title">Activity Heatmap</div>
+      <div class="chart-title">Activity Heatmap — Last 7 Days</div>
     </div>
     <div class="heatmap-grid">
       <!-- Hour labels across top -->
       <div class="heatmap-corner"></div>
       <div v-for="h in hourLabels" :key="'h'+h.hour" class="hour-label">{{ h.label }}</div>
 
-      <!-- Rows: one per day of week -->
-      <template v-for="d in dayLabels" :key="'d'+d.day">
-        <div class="day-label">{{ d.label }}</div>
+      <!-- Rows: one per day, oldest at top, today at bottom -->
+      <template v-for="row in dateRows" :key="row.date">
+        <div class="day-label">{{ row.label }}</div>
         <div
           v-for="h in 24"
-          :key="d.day + '-' + (h-1)"
+          :key="row.date + '-' + (h-1)"
           class="heatmap-cell"
-          :style="{ background: cellColor(d.day, h - 1) }"
-          :title="cellTooltip(d.day, h - 1)"
+          :class="{ future: row.date === todayDate && (h-1) > currentHour }"
+          :style="{ background: cellColor(row.date, h - 1) }"
+          :title="cellTooltip(row.date, row.tooltipLabel, h - 1)"
         ></div>
       </template>
     </div>
@@ -34,20 +35,16 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { HeatmapCell } from '../../types'
+import type { DateHeatmapCell } from '../../types'
 import { formatCostDisplay } from '../../composables/useFormatCost'
 
-const props = defineProps<{ cells: HeatmapCell[] }>()
+const props = defineProps<{ cells: DateHeatmapCell[] }>()
 
-const dayLabels = [
-  { day: 1, label: 'Mon' },
-  { day: 2, label: 'Tue' },
-  { day: 3, label: 'Wed' },
-  { day: 4, label: 'Thu' },
-  { day: 5, label: 'Fri' },
-  { day: 6, label: 'Sat' },
-  { day: 0, label: 'Sun' },
-]
+const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+// Track today's date and current hour for future-cell styling
+const todayDate = formatDateISO(new Date())
+const currentHour = new Date().getHours()
 
 const hourLabels = computed(() => {
   const labels = []
@@ -60,14 +57,50 @@ const hourLabels = computed(() => {
   return labels
 })
 
+// Format date to "YYYY-MM-DD"
+function formatDateISO(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// Generate 7 rows: 6 days ago at top, today at bottom
+const dateRows = computed(() => {
+  const today = new Date()
+  const rows: { date: string; label: string; tooltipLabel: string }[] = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(today.getDate() - i)
+    const dateStr = formatDateISO(d)
+    const dayName = dayNames[d.getDay()]
+    let label: string
+    let tooltipLabel: string
+    if (i === 0) {
+      label = 'Today'
+      tooltipLabel = 'Today'
+    } else if (i === 1) {
+      label = 'Yest.'
+      tooltipLabel = 'Yesterday'
+    } else {
+      label = dayName
+      tooltipLabel = dayName
+    }
+    rows.push({ date: dateStr, label, tooltipLabel })
+  }
+  return rows
+})
+
+// Build a map of {date-hour -> cost} for quick lookup
 const cellMap = computed(() => {
   const m = new Map<string, number>()
   for (const c of props.cells) {
-    m.set(`${c.day}-${c.hour}`, c.cost)
+    m.set(`${c.date}-${c.hour}`, c.cost)
   }
   return m
 })
 
+// Max cost for intensity scaling
 const maxCost = computed(() => {
   let max = 0
   for (const c of props.cells) {
@@ -76,8 +109,8 @@ const maxCost = computed(() => {
   return max || 1
 })
 
-function cellColor(day: number, hour: number): string {
-  const cost = cellMap.value.get(`${day}-${hour}`) || 0
+function cellColor(date: string, hour: number): string {
+  const cost = cellMap.value.get(`${date}-${hour}`) || 0
   if (cost === 0) return 'var(--bg-subtle)'
   const intensity = cost / maxCost.value
   if (intensity < 0.15) return 'rgba(245,158,11,0.10)'
@@ -87,11 +120,10 @@ function cellColor(day: number, hour: number): string {
   return '#f59e0b'
 }
 
-function cellTooltip(day: number, hour: number): string {
-  const cost = cellMap.value.get(`${day}-${hour}`) || 0
-  const dayName = dayLabels.find(d => d.day === day)?.label || ''
+function cellTooltip(date: string, dayLabel: string, hour: number): string {
+  const cost = cellMap.value.get(`${date}-${hour}`) || 0
   const hourStr = hour === 0 ? '12am' : hour < 12 ? `${hour}am` : hour === 12 ? '12pm' : `${hour-12}pm`
-  return `${dayName} ${hourStr}: ${formatCostDisplay(cost)}`
+  return `${dayLabel} ${hourStr}: ${formatCostDisplay(cost)}`
 }
 </script>
 
@@ -125,14 +157,14 @@ function cellTooltip(day: number, hour: number): string {
 }
 .hour-label {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 8px;
-  color: var(--text-disabled);
+  font-size: 11px;
+  color: var(--text-tertiary);
   text-align: center;
   padding-bottom: 2px;
 }
 .day-label {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--text-tertiary);
   display: flex;
   align-items: center;
@@ -149,6 +181,11 @@ function cellTooltip(day: number, hour: number): string {
   outline-offset: -1px;
   z-index: 1;
 }
+/* Future hours (after current hour today) */
+.heatmap-cell.future {
+  background: transparent !important;
+  border: 1px dashed var(--border-subtle);
+}
 .heatmap-legend {
   display: flex;
   align-items: center;
@@ -158,8 +195,8 @@ function cellTooltip(day: number, hour: number): string {
 }
 .legend-label {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  color: var(--text-disabled);
+  font-size: 11px;
+  color: var(--text-tertiary);
   padding: 0 3px;
 }
 .legend-swatch {

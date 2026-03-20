@@ -273,9 +273,9 @@ const monthLabels365 = computed(() => {
 .heatmap-30-label {
   text-align: center;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.3;
-  color: var(--text-disabled);
+  color: var(--text-tertiary);
   margin-bottom: 4px;
 }
 .heatmap-30-row {
@@ -312,8 +312,8 @@ const monthLabels365 = computed(() => {
 .heatmap-365-row-label {
   flex: 1; /* match grid row heights */
   font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  color: var(--text-disabled);
+  font-size: 11px;
+  color: var(--text-tertiary);
   display: flex;
   align-items: center;
   line-height: 1;
@@ -333,8 +333,8 @@ const monthLabels365 = computed(() => {
 }
 .heatmap-365-month-label {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  color: var(--text-disabled);
+  font-size: 11px;
+  color: var(--text-tertiary);
 }
 .heatmap-365-grid {
   display: grid;
@@ -376,8 +376,8 @@ const monthLabels365 = computed(() => {
 }
 .legend-label {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  color: var(--text-disabled);
+  font-size: 11px;
+  color: var(--text-tertiary);
   padding: 0 3px;
 }
 .legend-swatch {

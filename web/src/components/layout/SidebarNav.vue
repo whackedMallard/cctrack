@@ -20,6 +20,14 @@
         Overview
       </router-link>
 
+      <router-link class="nav-item" to="/projects" active-class="active">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M1 3h5l2 2h7v8H1V3z"/>
+          <path d="M5 8h6"/>
+        </svg>
+        Projects
+      </router-link>
+
       <router-link class="nav-item" to="/sessions" active-class="active">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M1 4h14M1 8h14M1 12h14"/>
@@ -28,14 +36,6 @@
           <circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/>
         </svg>
         Sessions
-      </router-link>
-
-      <router-link class="nav-item" to="/projects" active-class="active">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M1 3h5l2 2h7v8H1V3z"/>
-          <path d="M5 8h6"/>
-        </svg>
-        Projects
       </router-link>
 
       <div class="nav-label" style="margin-top: var(--space-4)">Config</div>

@@ -19,7 +19,7 @@
 <script setup lang="ts">
 import { computed, toRef } from 'vue'
 import { useCountUp } from '../../composables/useCountUp'
-import { formatTokens } from '../../composables/useFormatCost'
+import { formatTokens, formatCostDisplay } from '../../composables/useFormatCost'
 
 const props = defineProps<{
   label: string
@@ -35,11 +35,7 @@ const props = defineProps<{
 const targetValue = toRef(props, 'value')
 const animated = useCountUp(targetValue)
 
-const formattedValue = computed(() => {
-  const v = animated.value
-  if (v < 0.01) return '$' + v.toFixed(4)
-  return '$' + v.toFixed(2)
-})
+const formattedValue = computed(() => formatCostDisplay(animated.value))
 
 const trendClass = computed(() => {
   if (props.trendPct === undefined || props.trendPct === null) return ''

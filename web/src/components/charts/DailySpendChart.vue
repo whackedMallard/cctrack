@@ -78,7 +78,7 @@ const chartOptions = {
       titleFont: { family: 'DM Sans', size: 11 },
       padding: 12,
       callbacks: {
-        label: (ctx: any) => ' $' + ctx.parsed.y.toFixed(4),
+        label: (ctx: any) => ' ' + formatCostDisplay(ctx.parsed.y),
       },
     },
   },

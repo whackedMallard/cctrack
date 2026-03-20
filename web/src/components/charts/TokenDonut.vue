@@ -86,7 +86,7 @@ const chartOptions = {
         label: (ctx: any) => {
           const t = ctx.dataset.data.reduce((a: number, b: number) => a + b, 0)
           const pct = t > 0 ? Math.round((ctx.parsed / t) * 100) : 0
-          return `  $${ctx.parsed.toFixed(2)} (${pct}%)`
+          return `  ${formatCostDisplay(ctx.parsed)} (${pct}%)`
         },
       },
     },

@@ -98,7 +98,7 @@
 import { computed, ref, watch } from 'vue'
 import type { Session, RequestRecord } from '../../types'
 import Badge from '../primitives/Badge.vue'
-import { formatCostDisplay, formatTokensRaw, formatModel, formatDate } from '../../composables/useFormatCost'
+import { formatCostDisplay, formatCostPrecise, formatTokensRaw, formatModel, formatDate } from '../../composables/useFormatCost'
 import { fetchSessionRequests } from '../../api'
 
 const props = defineProps<{ session: Session | null }>()
@@ -141,7 +141,7 @@ const points = computed(() => {
   return raw.map((r, i) => ({
     x: padding.left + (i / (n - 1)) * w,
     y: padding.top + h - (r.cumCost / maxCost) * h,
-    tooltip: `$${r.cumCost.toFixed(2)} (+$${r.cost.toFixed(3)})`,
+    tooltip: `${formatCostDisplay(r.cumCost)} (+${formatCostPrecise(r.cost)})`,
   }))
 })
 

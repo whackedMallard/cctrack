@@ -100,9 +100,18 @@ const projects = ref<ProjectSummary[]>([])
 const monthlyData = ref<ProjectMonthly[]>([])
 
 const projectColors = [
-  '#f59e0b', '#fbbf24', '#fcd34d', '#d97706',
-  '#92400e', '#78716c', '#57534e', '#44403c',
-  '#a8a29e', '#6b7280', '#4b5563', '#374151',
+  '#f59e0b', // amber  (app accent)
+  '#3b82f6', // blue
+  '#10b981', // emerald
+  '#f43f5e', // rose
+  '#8b5cf6', // violet
+  '#06b6d4', // cyan
+  '#ec4899', // pink
+  '#84cc16', // lime
+  '#f97316', // orange
+  '#6366f1', // indigo
+  '#14b8a6', // teal
+  '#a855f7', // purple
 ]
 
 const totalCost = computed(() =>
@@ -146,7 +155,7 @@ const projectBarOptions = {
       titleFont: { family: 'DM Sans', size: 11 },
       padding: 12,
       callbacks: {
-        label: (ctx: any) => ' $' + ctx.parsed.x.toFixed(2),
+        label: (ctx: any) => ' ' + formatCostDisplay(ctx.parsed.x),
       },
     },
   },
@@ -212,7 +221,7 @@ const donutOptions = {
         label: (ctx: any) => {
           const total = ctx.dataset.data.reduce((a: number, b: number) => a + b, 0)
           const pct = total > 0 ? Math.round((ctx.parsed / total) * 100) : 0
-          return ` $${ctx.parsed.toFixed(2)} (${pct}%)`
+          return ` ${formatCostDisplay(ctx.parsed)} (${pct}%)`
         },
       },
     },
@@ -289,7 +298,7 @@ const monthlyBarOptions = {
       bodyFont: { family: 'JetBrains Mono', size: 12 },
       padding: 12,
       callbacks: {
-        label: (ctx: any) => ` ${ctx.dataset.label}: $${ctx.parsed.y.toFixed(2)}`,
+        label: (ctx: any) => ` ${ctx.dataset.label}: ${formatCostDisplay(ctx.parsed.y)}`,
       },
     },
   },

@@ -35,6 +35,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { HeatmapCell } from '../../types'
+import { formatCostDisplay } from '../../composables/useFormatCost'
 
 const props = defineProps<{ cells: HeatmapCell[] }>()
 
@@ -90,7 +91,7 @@ function cellTooltip(day: number, hour: number): string {
   const cost = cellMap.value.get(`${day}-${hour}`) || 0
   const dayName = dayLabels.find(d => d.day === day)?.label || ''
   const hourStr = hour === 0 ? '12am' : hour < 12 ? `${hour}am` : hour === 12 ? '12pm' : `${hour-12}pm`
-  return `${dayName} ${hourStr}: $${cost.toFixed(2)}`
+  return `${dayName} ${hourStr}: ${formatCostDisplay(cost)}`
 }
 </script>
 

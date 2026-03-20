@@ -80,7 +80,7 @@ const dateRows = computed(() => {
       label = 'Today'
       tooltipLabel = 'Today'
     } else if (i === 1) {
-      label = 'Yest.'
+      label = dayName
       tooltipLabel = 'Yesterday'
     } else {
       label = dayName

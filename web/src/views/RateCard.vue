@@ -30,6 +30,12 @@
 
     <p class="rate-note">
       All prices per million tokens. Rates are bundled with the binary — update cctrack to get the latest rates.
+      <a href="https://platform.claude.com/docs/en/about-claude/pricing"
+         target="_blank"
+         rel="noopener noreferrer"
+         class="ref-link">
+        View official pricing →
+      </a>
     </p>
   </div>
 </template>
@@ -108,5 +114,14 @@ td.right { text-align: right; }
   margin-top: var(--space-6);
   font-size: 13px;
   color: var(--text-tertiary);
+}
+.ref-link {
+  color: var(--amber-500);
+  text-decoration: none;
+  transition: color 150ms;
+  white-space: nowrap;
+}
+.ref-link:hover {
+  color: var(--amber-300);
 }
 </style>

@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-// setupTestStore creates a store with a temp DB and one test session.
+// setupTestStore creates a store with a temp DB and one test session + matching request.
 func setupTestStore(t *testing.T) *Store {
 	t.Helper()
 	s, err := Open(t.TempDir() + "/test.db")
@@ -27,6 +27,22 @@ func setupTestStore(t *testing.T) *Store {
 	})
 	if err != nil {
 		t.Fatalf("upsert session: %v", err)
+	}
+
+	// Insert matching request record (queries now use requests table)
+	err = s.UpsertRequest(RequestRecord{
+		RequestID:        "req-test-1",
+		SessionID:        "test-session-1",
+		Timestamp:        "2026-03-19T10:00:00Z",
+		Model:            "claude-sonnet-4-20250514",
+		InputTokens:      100,
+		OutputTokens:     50,
+		CacheReadTokens:  10,
+		CacheWriteTokens: 5,
+		Cost:             0.01,
+	})
+	if err != nil {
+		t.Fatalf("upsert request: %v", err)
 	}
 
 	return s
@@ -164,7 +180,8 @@ func TestGetSessionRequests_RowsErr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSessionRequests: %v", err)
 	}
-	if len(recs) != 1 {
-		t.Errorf("expected 1 request, got %d", len(recs))
+	// setupTestStore inserts "req-test-1" and this test inserts "req-1" — both for the same session
+	if len(recs) != 2 {
+		t.Errorf("expected 2 requests, got %d", len(recs))
 	}
 }

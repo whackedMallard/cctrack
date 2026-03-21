@@ -42,11 +42,11 @@ func (s *Store) GetSummary() (*Summary, error) {
 
 	summary := &Summary{}
 
-	// Today: sessions active between local midnight and local tomorrow midnight
+	// Today: requests with timestamps between local midnight and local tomorrow midnight
 	err := s.db.QueryRow(`
-		SELECT COALESCE(SUM(total_cost), 0),
-		       COALESCE(SUM(total_input + total_output + total_cache_read + total_cache_write), 0)
-		FROM sessions WHERE last_activity >= ? AND last_activity < ?`,
+		SELECT COALESCE(SUM(cost), 0),
+		       COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens), 0)
+		FROM requests WHERE timestamp >= ? AND timestamp < ?`,
 		todayStart, tomorrowStart).Scan(&summary.Today.Cost, &summary.Today.Tokens)
 	if err != nil {
 		return nil, err
@@ -54,18 +54,18 @@ func (s *Store) GetSummary() (*Summary, error) {
 
 	// This week
 	err = s.db.QueryRow(`
-		SELECT COALESCE(SUM(total_cost), 0),
-		       COALESCE(SUM(total_input + total_output + total_cache_read + total_cache_write), 0)
-		FROM sessions WHERE last_activity >= ?`, weekAgo).Scan(&summary.Week.Cost, &summary.Week.Tokens)
+		SELECT COALESCE(SUM(cost), 0),
+		       COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens), 0)
+		FROM requests WHERE timestamp >= ?`, weekAgo).Scan(&summary.Week.Cost, &summary.Week.Tokens)
 	if err != nil {
 		return nil, err
 	}
 
 	// This month
 	err = s.db.QueryRow(`
-		SELECT COALESCE(SUM(total_cost), 0),
-		       COALESCE(SUM(total_input + total_output + total_cache_read + total_cache_write), 0)
-		FROM sessions WHERE last_activity >= ?`, monthStart).Scan(&summary.Month.Cost, &summary.Month.Tokens)
+		SELECT COALESCE(SUM(cost), 0),
+		       COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens), 0)
+		FROM requests WHERE timestamp >= ?`, monthStart).Scan(&summary.Month.Cost, &summary.Month.Tokens)
 	if err != nil {
 		return nil, err
 	}
@@ -84,11 +84,11 @@ func (s *Store) GetDailySummary(days int) ([]DailySpend, error) {
 	now := time.Now()
 	since := startOfDay(now).AddDate(0, 0, -days).Format(time.RFC3339)
 
-	// Query raw timestamps and costs — no SQLite date functions
+	// Query per-request timestamps and costs — each request lands on the day it occurred
 	rows, err := s.db.Query(`
-		SELECT last_activity, total_cost
-		FROM sessions
-		WHERE last_activity >= ?`, since)
+		SELECT timestamp, cost
+		FROM requests
+		WHERE timestamp >= ?`, since)
 	if err != nil {
 		return nil, err
 	}
@@ -228,11 +228,12 @@ func (s *Store) GetProjects() ([]ProjectSummary, error) {
 func (s *Store) GetProjectMonthly() ([]ProjectMonthly, error) {
 	sixMonthsAgo := time.Now().AddDate(0, -6, 0).Format(time.RFC3339)
 
-	// Query raw timestamps — bucket by month in Go
+	// Query per-request timestamps — bucket by month in Go
 	rows, err := s.db.Query(`
-		SELECT project, last_activity, total_cost
-		FROM sessions
-		WHERE last_activity >= ?`, sixMonthsAgo)
+		SELECT s.project, r.timestamp, r.cost
+		FROM requests r
+		JOIN sessions s ON s.id = r.session_id
+		WHERE r.timestamp >= ?`, sixMonthsAgo)
 	if err != nil {
 		return nil, err
 	}
@@ -266,11 +267,11 @@ func (s *Store) GetProjectMonthly() ([]ProjectMonthly, error) {
 
 func (s *Store) GetTokenBreakdown() (input, output, cacheRead, cacheWrite int64, err error) {
 	err = s.db.QueryRow(`
-		SELECT COALESCE(SUM(total_input), 0),
-		       COALESCE(SUM(total_output), 0),
-		       COALESCE(SUM(total_cache_read), 0),
-		       COALESCE(SUM(total_cache_write), 0)
-		FROM sessions`).Scan(&input, &output, &cacheRead, &cacheWrite)
+		SELECT COALESCE(SUM(input_tokens), 0),
+		       COALESCE(SUM(output_tokens), 0),
+		       COALESCE(SUM(cache_read_tokens), 0),
+		       COALESCE(SUM(cache_write_tokens), 0)
+		FROM requests`).Scan(&input, &output, &cacheRead, &cacheWrite)
 	return
 }
 
@@ -283,8 +284,9 @@ type CostByType struct {
 
 func (s *Store) GetCostBreakdown() (*CostByType, error) {
 	rows, err := s.db.Query(`
-		SELECT model, total_input, total_output, total_cache_read, total_cache_write
-		FROM sessions`)
+		SELECT model, SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), SUM(cache_write_tokens)
+		FROM requests
+		GROUP BY model`)
 	if err != nil {
 		return nil, err
 	}
@@ -368,9 +370,9 @@ func (s *Store) GetDailyHeatmap(days int) ([]DailyHeatmapCell, error) {
 	since := startOfDay(time.Now()).AddDate(0, 0, -(days - 1))
 
 	rows, err := s.db.Query(`
-		SELECT last_activity, total_cost
-		FROM sessions
-		WHERE last_activity != '' AND last_activity >= ?`,
+		SELECT timestamp, cost
+		FROM requests
+		WHERE timestamp != '' AND timestamp >= ?`,
 		since.Format(time.RFC3339))
 	if err != nil {
 		return nil, err
@@ -422,9 +424,9 @@ func (s *Store) GetDateHeatmap(days int) ([]DateHeatmapCell, error) {
 	since := startOfDay(time.Now()).AddDate(0, 0, -(days - 1))
 
 	rows, err := s.db.Query(`
-		SELECT last_activity, total_cost
-		FROM sessions
-		WHERE last_activity != '' AND last_activity >= ?`,
+		SELECT timestamp, cost
+		FROM requests
+		WHERE timestamp != '' AND timestamp >= ?`,
 		since.Format(time.RFC3339))
 	if err != nil {
 		return nil, err
@@ -488,20 +490,20 @@ func (s *Store) GetTrends() (*Trends, error) {
 
 	// Previous day cost (yesterday midnight to today midnight, local time)
 	s.db.QueryRow(`
-		SELECT COALESCE(SUM(total_cost), 0)
-		FROM sessions WHERE last_activity >= ? AND last_activity < ?`,
+		SELECT COALESCE(SUM(cost), 0)
+		FROM requests WHERE timestamp >= ? AND timestamp < ?`,
 		yesterdayStart, todayStart).Scan(&t.PrevDayCost)
 
 	// Previous week cost (7-14 days ago)
 	s.db.QueryRow(`
-		SELECT COALESCE(SUM(total_cost), 0)
-		FROM sessions WHERE last_activity >= ? AND last_activity < ?`,
+		SELECT COALESCE(SUM(cost), 0)
+		FROM requests WHERE timestamp >= ? AND timestamp < ?`,
 		twoWeeksAgo, oneWeekAgo).Scan(&t.PrevWeekCost)
 
 	// Previous month cost
 	s.db.QueryRow(`
-		SELECT COALESCE(SUM(total_cost), 0)
-		FROM sessions WHERE last_activity >= ? AND last_activity < ?`,
+		SELECT COALESCE(SUM(cost), 0)
+		FROM requests WHERE timestamp >= ? AND timestamp < ?`,
 		prevMonthStart, prevMonthEnd).Scan(&t.PrevMonthCost)
 
 	return t, nil

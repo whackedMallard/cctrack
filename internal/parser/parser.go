@@ -80,13 +80,14 @@ func (p *Parser) ParseFile(path string) ([]string, error) {
 
 	info := ExtractSessionInfo(path)
 
-	// Read all events, deduplicating by requestId (last event wins)
+	// Read all events, deduplicating by requestId (last event wins).
+	// Events without a requestId get a synthetic ID so they are still
+	// persisted as request records (needed for accurate cost tracking).
 	type eventEntry struct {
 		event RawEvent
 		order int
 	}
 	byRequestID := make(map[string]eventEntry)
-	var noRequestID []RawEvent
 	orderCounter := 0
 
 	scanner := bufio.NewScanner(f)
@@ -111,35 +112,27 @@ func (p *Parser) ParseFile(path string) ([]string, error) {
 			continue
 		}
 
-		if event.RequestID != "" {
-			byRequestID[event.RequestID] = eventEntry{event: event, order: orderCounter}
-		} else {
-			noRequestID = append(noRequestID, event)
+		// Assign synthetic request ID for events that lack one, so they
+		// still get persisted as request records with per-event cost.
+		reqID := event.RequestID
+		if reqID == "" {
+			reqID = fmt.Sprintf("no-req-%s-%d", info.SessionID, orderCounter)
 		}
+		byRequestID[reqID] = eventEntry{event: event, order: orderCounter}
 		orderCounter++
-	}
-
-	// Per-branch token accumulator within a session
-	type branchAgg struct {
-		firstSeen  string
-		lastSeen   string
-		input      int64
-		output     int64
-		cacheRead  int64
-		cacheWrite int64
 	}
 
 	// Aggregate token usage per session
 	type sessionAgg struct {
-		model     string
-		slug      string
-		sessionID string
-		timestamp string
-		input     int64
-		output    int64
-		cacheRead int64
+		model      string
+		slug       string
+		sessionID  string
+		timestamp  string
+		input      int64
+		output     int64
+		cacheRead  int64
 		cacheWrite int64
-		branches  map[string]*branchAgg // key: branch name
+		cost       float64 // accumulated per-event cost (mixed-model safe)
 	}
 	sessions := make(map[string]*sessionAgg)
 
@@ -164,7 +157,7 @@ func (p *Parser) ParseFile(path string) ([]string, error) {
 
 		agg, ok := sessions[sid]
 		if !ok {
-			agg = &sessionAgg{sessionID: sid, branches: make(map[string]*branchAgg)}
+			agg = &sessionAgg{sessionID: sid}
 			sessions[sid] = agg
 		}
 
@@ -183,69 +176,46 @@ func (p *Parser) ParseFile(path string) ([]string, error) {
 		agg.cacheRead += u.CacheReadInputTokens
 		agg.cacheWrite += u.CacheCreationInputTokens
 
-		// Accumulate per-branch token data
+		// Calculate per-event cost using this event's own model so that
+		// mixed-model sessions accumulate the correct total cost.
+		eventUsage := calculator.TokenUsage{
+			InputTokens:      u.InputTokens,
+			OutputTokens:     u.OutputTokens,
+			CacheReadTokens:  u.CacheReadInputTokens,
+			CacheWriteTokens: u.CacheCreationInputTokens,
+		}
+		eventCost := calculator.Calculate(event.Message.Model, eventUsage)
+		agg.cost += eventCost.TotalCost
+
+		// Determine branch for per-request record
 		branch := event.GitBranch
 		if branch == "" {
 			branch = "No repo"
 		}
-		ba, ok := agg.branches[branch]
-		if !ok {
-			ba = &branchAgg{firstSeen: event.Timestamp, lastSeen: event.Timestamp}
-			agg.branches[branch] = ba
-		}
-		if event.Timestamp < ba.firstSeen {
-			ba.firstSeen = event.Timestamp
-		}
-		if event.Timestamp > ba.lastSeen {
-			ba.lastSeen = event.Timestamp
-		}
-		ba.input += u.InputTokens
-		ba.output += u.OutputTokens
-		ba.cacheRead += u.CacheReadInputTokens
-		ba.cacheWrite += u.CacheCreationInputTokens
 
-		// Store per-request record if we have a requestID
-		if requestID != "" {
-			usage := calculator.TokenUsage{
-				InputTokens:      u.InputTokens,
-				OutputTokens:     u.OutputTokens,
-				CacheReadTokens:  u.CacheReadInputTokens,
-				CacheWriteTokens: u.CacheCreationInputTokens,
-			}
-			cost := calculator.Calculate(event.Message.Model, usage)
-			requestRecords = append(requestRecords, store.RequestRecord{
-				RequestID:        requestID,
-				SessionID:        sid,
-				Timestamp:        event.Timestamp,
-				Model:            event.Message.Model,
-				InputTokens:      u.InputTokens,
-				OutputTokens:     u.OutputTokens,
-				CacheReadTokens:  u.CacheReadInputTokens,
-				CacheWriteTokens: u.CacheCreationInputTokens,
-				Cost:             cost.TotalCost,
-			})
-		}
+		requestRecords = append(requestRecords, store.RequestRecord{
+			RequestID:        requestID,
+			SessionID:        sid,
+			Timestamp:        event.Timestamp,
+			Model:            event.Message.Model,
+			InputTokens:      u.InputTokens,
+			OutputTokens:     u.OutputTokens,
+			CacheReadTokens:  u.CacheReadInputTokens,
+			CacheWriteTokens: u.CacheCreationInputTokens,
+			Cost:             eventCost.TotalCost,
+			GitBranch:        branch,
+		})
 	}
 
 	for reqID, entry := range byRequestID {
 		processEvent(entry.event, reqID)
 	}
-	for _, event := range noRequestID {
-		processEvent(event, "")
-	}
 
 	// Upsert each session
 	var affectedIDs []string
 	for sid, agg := range sessions {
-		usage := calculator.TokenUsage{
-			InputTokens:      agg.input,
-			OutputTokens:     agg.output,
-			CacheReadTokens:  agg.cacheRead,
-			CacheWriteTokens: agg.cacheWrite,
-		}
-		cost := calculator.Calculate(agg.model, usage)
-
 		project := info.Project
+		// Use accumulated per-event cost (not recalculated at a single model rate)
 		delta := store.SessionDelta{
 			ID:              sid,
 			Project:         project,
@@ -256,40 +226,12 @@ func (p *Parser) ParseFile(path string) ([]string, error) {
 			DeltaOutput:     agg.output,
 			DeltaCacheRead:  agg.cacheRead,
 			DeltaCacheWrite: agg.cacheWrite,
-			DeltaCost:       cost.TotalCost,
+			DeltaCost:       agg.cost,
 		}
 
 		if err := p.store.UpsertSession(delta); err != nil {
 			log.Printf("Warning: failed to upsert session %s: %v", sid, err)
 			continue
-		}
-
-		// Upsert per-branch deltas
-		for branch, ba := range agg.branches {
-			branchUsage := calculator.TokenUsage{
-				InputTokens:      ba.input,
-				OutputTokens:     ba.output,
-				CacheReadTokens:  ba.cacheRead,
-				CacheWriteTokens: ba.cacheWrite,
-			}
-			branchCost := calculator.Calculate(agg.model, branchUsage)
-			branchDelta := store.SessionDelta{
-				ID:              sid,
-				Project:         project,
-				Slug:            agg.slug,
-				Model:           agg.model,
-				GitBranch:       branch,
-				Timestamp:       ba.lastSeen,
-				DeltaInput:      ba.input,
-				DeltaOutput:     ba.output,
-				DeltaCacheRead:  ba.cacheRead,
-				DeltaCacheWrite: ba.cacheWrite,
-				DeltaCost:       branchCost.TotalCost,
-			}
-			// Use firstSeen from branchAgg for upsert
-			if err := p.store.UpsertSessionBranch(branchDelta, ba.firstSeen); err != nil {
-				log.Printf("Warning: failed to upsert session branch %s/%s: %v", sid, branch, err)
-			}
 		}
 
 		affectedIDs = append(affectedIDs, sid)
@@ -299,6 +241,13 @@ func (p *Parser) ParseFile(path string) ([]string, error) {
 	for _, rec := range requestRecords {
 		if err := p.store.UpsertRequest(rec); err != nil {
 			log.Printf("Warning: failed to upsert request %s: %v", rec.RequestID, err)
+		}
+	}
+
+	// Rebuild session/session_branches totals from correctly-deduped requests
+	if len(affectedIDs) > 0 {
+		if err := p.store.RebuildSessionTotals(affectedIDs); err != nil {
+			log.Printf("Warning: failed to rebuild session totals: %v", err)
 		}
 	}
 

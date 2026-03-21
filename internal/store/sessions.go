@@ -1,6 +1,9 @@
 package store
 
-import "fmt"
+import (
+	"database/sql"
+	"fmt"
+)
 
 type Session struct {
 	ID             string  `json:"id"`
@@ -75,22 +78,23 @@ func (s *Store) GetSession(id string) (*Session, error) {
 // --- Request-level tracking ---
 
 type RequestRecord struct {
-	RequestID       string  `json:"request_id"`
-	SessionID       string  `json:"session_id"`
-	Timestamp       string  `json:"timestamp"`
-	Model           string  `json:"model"`
-	InputTokens     int64   `json:"input_tokens"`
-	OutputTokens    int64   `json:"output_tokens"`
-	CacheReadTokens int64   `json:"cache_read_tokens"`
-	CacheWriteTokens int64  `json:"cache_write_tokens"`
-	Cost            float64 `json:"cost"`
+	RequestID        string  `json:"request_id"`
+	SessionID        string  `json:"session_id"`
+	Timestamp        string  `json:"timestamp"`
+	Model            string  `json:"model"`
+	InputTokens      int64   `json:"input_tokens"`
+	OutputTokens     int64   `json:"output_tokens"`
+	CacheReadTokens  int64   `json:"cache_read_tokens"`
+	CacheWriteTokens int64   `json:"cache_write_tokens"`
+	Cost             float64 `json:"cost"`
+	GitBranch        string  `json:"git_branch"`
 }
 
 func (s *Store) UpsertRequest(r RequestRecord) error {
 	_, err := s.db.Exec(`
 		INSERT INTO requests (request_id, session_id, timestamp, model,
-			input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost, git_branch)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(request_id) DO UPDATE SET
 			timestamp = excluded.timestamp,
 			model = excluded.model,
@@ -98,16 +102,17 @@ func (s *Store) UpsertRequest(r RequestRecord) error {
 			output_tokens = excluded.output_tokens,
 			cache_read_tokens = excluded.cache_read_tokens,
 			cache_write_tokens = excluded.cache_write_tokens,
-			cost = excluded.cost
+			cost = excluded.cost,
+			git_branch = excluded.git_branch
 	`, r.RequestID, r.SessionID, r.Timestamp, r.Model,
-		r.InputTokens, r.OutputTokens, r.CacheReadTokens, r.CacheWriteTokens, r.Cost)
+		r.InputTokens, r.OutputTokens, r.CacheReadTokens, r.CacheWriteTokens, r.Cost, r.GitBranch)
 	return err
 }
 
 func (s *Store) GetSessionRequests(sessionID string) ([]RequestRecord, error) {
 	rows, err := s.db.Query(`
 		SELECT request_id, session_id, timestamp, model,
-			input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost
+			input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost, git_branch
 		FROM requests WHERE session_id = ?
 		ORDER BY timestamp ASC`, sessionID)
 	if err != nil {
@@ -120,7 +125,7 @@ func (s *Store) GetSessionRequests(sessionID string) ([]RequestRecord, error) {
 		var r RequestRecord
 		if err := rows.Scan(&r.RequestID, &r.SessionID, &r.Timestamp, &r.Model,
 			&r.InputTokens, &r.OutputTokens, &r.CacheReadTokens, &r.CacheWriteTokens,
-			&r.Cost); err != nil {
+			&r.Cost, &r.GitBranch); err != nil {
 			return nil, err
 		}
 		recs = append(recs, r)
@@ -129,6 +134,76 @@ func (s *Store) GetSessionRequests(sessionID string) ([]RequestRecord, error) {
 		return nil, err
 	}
 	return recs, nil
+}
+
+// RebuildSessionTotals recalculates sessions and session_branches totals
+// from the correctly-deduped requests table, fixing subagent duplication.
+func (s *Store) RebuildSessionTotals(sessionIDs []string) error {
+	for _, sid := range sessionIDs {
+		// Aggregate all request-level data in a single scan
+		var totalInput, totalOutput, totalCacheRead, totalCacheWrite int64
+		var totalCost float64
+		var minTs, maxTs sql.NullString
+		err := s.db.QueryRow(`
+			SELECT COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+			       COALESCE(SUM(cache_read_tokens), 0), COALESCE(SUM(cache_write_tokens), 0),
+			       COALESCE(SUM(cost), 0), MIN(timestamp), MAX(timestamp)
+			FROM requests WHERE session_id = ?`, sid).Scan(
+			&totalInput, &totalOutput, &totalCacheRead, &totalCacheWrite,
+			&totalCost, &minTs, &maxTs)
+		if err != nil {
+			return fmt.Errorf("rebuild session %s: %w", sid, err)
+		}
+
+		// Update session with aggregated values
+		startedAt := ""
+		if minTs.Valid {
+			startedAt = minTs.String
+		}
+		lastActivity := ""
+		if maxTs.Valid {
+			lastActivity = maxTs.String
+		}
+
+		_, err = s.db.Exec(`
+			UPDATE sessions SET
+				total_input = ?, total_output = ?,
+				total_cache_read = ?, total_cache_write = ?,
+				total_cost = ?,
+				started_at = CASE WHEN ? != '' THEN ? ELSE started_at END,
+				last_activity = CASE WHEN ? != '' THEN ? ELSE last_activity END
+			WHERE id = ?`,
+			totalInput, totalOutput, totalCacheRead, totalCacheWrite, totalCost,
+			startedAt, startedAt, lastActivity, lastActivity, sid)
+		if err != nil {
+			return fmt.Errorf("rebuild session %s: %w", sid, err)
+		}
+
+		// Delete existing session_branches for this session, then rebuild from requests
+		_, err = s.db.Exec("DELETE FROM session_branches WHERE session_id = ?", sid)
+		if err != nil {
+			return fmt.Errorf("clear session_branches %s: %w", sid, err)
+		}
+
+		// Rebuild session_branches from requests grouped by git_branch
+		_, err = s.db.Exec(`
+			INSERT INTO session_branches (session_id, branch, first_seen, last_seen,
+				total_input, total_output, total_cache_read, total_cache_write, total_cost)
+			SELECT session_id,
+				   CASE WHEN git_branch = '' THEN 'No repo' ELSE git_branch END,
+				   MIN(timestamp), MAX(timestamp),
+				   SUM(input_tokens), SUM(output_tokens),
+				   SUM(cache_read_tokens), SUM(cache_write_tokens),
+				   SUM(cost)
+			FROM requests
+			WHERE session_id = ?
+			GROUP BY session_id, CASE WHEN git_branch = '' THEN 'No repo' ELSE git_branch END
+		`, sid)
+		if err != nil {
+			return fmt.Errorf("rebuild session_branches %s: %w", sid, err)
+		}
+	}
+	return nil
 }
 
 var allowedSortColumns = map[string]string{

@@ -35,10 +35,10 @@ type DailySpend struct {
 
 func (s *Store) GetSummary() (*Summary, error) {
 	now := time.Now()
-	todayStart := startOfDay(now).Format(time.RFC3339)
-	tomorrowStart := startOfDay(now).AddDate(0, 0, 1).Format(time.RFC3339)
-	weekAgo := startOfDay(now).AddDate(0, 0, -7).Format(time.RFC3339)
-	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format(time.RFC3339)
+	todayStart := startOfDay(now).UTC().Format(time.RFC3339)
+	tomorrowStart := startOfDay(now).AddDate(0, 0, 1).UTC().Format(time.RFC3339)
+	weekAgo := startOfDay(now).AddDate(0, 0, -7).UTC().Format(time.RFC3339)
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).UTC().Format(time.RFC3339)
 
 	summary := &Summary{}
 
@@ -82,7 +82,7 @@ func (s *Store) GetSummary() (*Summary, error) {
 
 func (s *Store) GetDailySummary(days int) ([]DailySpend, error) {
 	now := time.Now()
-	since := startOfDay(now).AddDate(0, 0, -days).Format(time.RFC3339)
+	since := startOfDay(now).AddDate(0, 0, -days).UTC().Format(time.RFC3339)
 
 	// Query per-request timestamps and costs — each request lands on the day it occurred
 	rows, err := s.db.Query(`
@@ -226,7 +226,7 @@ func (s *Store) GetProjects() ([]ProjectSummary, error) {
 }
 
 func (s *Store) GetProjectMonthly() ([]ProjectMonthly, error) {
-	sixMonthsAgo := time.Now().AddDate(0, -6, 0).Format(time.RFC3339)
+	sixMonthsAgo := time.Now().AddDate(0, -6, 0).UTC().Format(time.RFC3339)
 
 	// Query per-request timestamps — bucket by month in Go
 	rows, err := s.db.Query(`
@@ -373,7 +373,7 @@ func (s *Store) GetDailyHeatmap(days int) ([]DailyHeatmapCell, error) {
 		SELECT timestamp, cost
 		FROM requests
 		WHERE timestamp != '' AND timestamp >= ?`,
-		since.Format(time.RFC3339))
+		since.UTC().Format(time.RFC3339))
 	if err != nil {
 		return nil, err
 	}
@@ -427,7 +427,7 @@ func (s *Store) GetDateHeatmap(days int) ([]DateHeatmapCell, error) {
 		SELECT timestamp, cost
 		FROM requests
 		WHERE timestamp != '' AND timestamp >= ?`,
-		since.Format(time.RFC3339))
+		since.UTC().Format(time.RFC3339))
 	if err != nil {
 		return nil, err
 	}
@@ -477,14 +477,14 @@ type Trends struct {
 
 func (s *Store) GetTrends() (*Trends, error) {
 	now := time.Now()
-	todayStart := startOfDay(now).Format(time.RFC3339)
-	yesterdayStart := startOfDay(now).AddDate(0, 0, -1).Format(time.RFC3339)
+	todayStart := startOfDay(now).UTC().Format(time.RFC3339)
+	yesterdayStart := startOfDay(now).AddDate(0, 0, -1).UTC().Format(time.RFC3339)
 
-	twoWeeksAgo := startOfDay(now).AddDate(0, 0, -14).Format(time.RFC3339)
-	oneWeekAgo := startOfDay(now).AddDate(0, 0, -7).Format(time.RFC3339)
+	twoWeeksAgo := startOfDay(now).AddDate(0, 0, -14).UTC().Format(time.RFC3339)
+	oneWeekAgo := startOfDay(now).AddDate(0, 0, -7).UTC().Format(time.RFC3339)
 
-	prevMonthStart := time.Date(now.Year(), now.Month()-1, 1, 0, 0, 0, 0, now.Location()).Format(time.RFC3339)
-	prevMonthEnd := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format(time.RFC3339)
+	prevMonthStart := time.Date(now.Year(), now.Month()-1, 1, 0, 0, 0, 0, now.Location()).UTC().Format(time.RFC3339)
+	prevMonthEnd := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).UTC().Format(time.RFC3339)
 
 	t := &Trends{}
 

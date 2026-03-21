@@ -22,7 +22,7 @@ func setupTZTestStore(t *testing.T) *Store {
 	now := time.Now()
 
 	// Session 1: activity 2 hours ago (should be "today" in local time)
-	ts1 := now.Add(-2 * time.Hour).Format(time.RFC3339)
+	ts1 := now.Add(-2 * time.Hour).UTC().Format(time.RFC3339)
 	err = s.UpsertSession(SessionDelta{
 		ID: "today-session", Project: "test", Model: "claude-sonnet-4-20250514",
 		Timestamp: ts1, DeltaInput: 100, DeltaOutput: 50, DeltaCost: 0.05,
@@ -42,7 +42,7 @@ func setupTZTestStore(t *testing.T) *Store {
 	}
 
 	// Session 2: activity 2 days ago (should NOT be "today")
-	ts2 := now.AddDate(0, 0, -2).Format(time.RFC3339)
+	ts2 := now.AddDate(0, 0, -2).UTC().Format(time.RFC3339)
 	err = s.UpsertSession(SessionDelta{
 		ID: "old-session", Project: "test", Model: "claude-sonnet-4-20250514",
 		Timestamp: ts2, DeltaInput: 200, DeltaOutput: 100, DeltaCost: 0.10,

@@ -67,6 +67,7 @@ func (s *Store) migrate() error {
 			cache_read_tokens INTEGER NOT NULL DEFAULT 0,
 			cache_write_tokens INTEGER NOT NULL DEFAULT 0,
 			cost       REAL NOT NULL DEFAULT 0,
+			git_branch TEXT NOT NULL DEFAULT '',
 			FOREIGN KEY (session_id) REFERENCES sessions(id)
 		);
 
@@ -89,6 +90,7 @@ func (s *Store) migrate() error {
 		CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at);
 		CREATE INDEX IF NOT EXISTS idx_requests_session_id ON requests(session_id);
 		CREATE INDEX IF NOT EXISTS idx_session_branches_last_seen ON session_branches(last_seen);
+		CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp);
 	`)
 	if err != nil {
 		return err
@@ -107,6 +109,21 @@ func (s *Store) migrate() error {
 		s.db.Exec("DELETE FROM sessions")
 		s.db.Exec("DELETE FROM file_offsets")
 	}
+
+	// Migration: add git_branch column to requests table.
+	// If missing, clear all data to force a full re-parse with branch info.
+	var colCount int
+	s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('requests') WHERE name='git_branch'`).Scan(&colCount)
+	if colCount == 0 {
+		s.db.Exec("ALTER TABLE requests ADD COLUMN git_branch TEXT NOT NULL DEFAULT ''")
+		s.db.Exec("DELETE FROM session_branches")
+		s.db.Exec("DELETE FROM requests")
+		s.db.Exec("DELETE FROM sessions")
+		s.db.Exec("DELETE FROM file_offsets")
+	}
+
+	// Create git_branch index after the migration above ensures the column exists
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_requests_git_branch ON requests(git_branch)")
 
 	return nil
 }

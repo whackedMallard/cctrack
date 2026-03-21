@@ -207,3 +207,135 @@ func TestUpsertSessionBranch_MultiBranch(t *testing.T) {
 		t.Errorf("branch-b input: got %d, want 200", branchTotals["feat/branch-b"])
 	}
 }
+
+func TestRebuildSessionTotals(t *testing.T) {
+	s, err := Open(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+
+	// Create session with inflated totals (simulating subagent duplication)
+	err = s.UpsertSession(SessionDelta{
+		ID: "sess-1", Project: "test", Model: "claude-sonnet-4-20250514",
+		Timestamp: "2026-03-19T10:00:00Z",
+		DeltaInput: 200, DeltaOutput: 100, DeltaCost: 0.20,
+	})
+	if err != nil {
+		t.Fatalf("UpsertSession: %v", err)
+	}
+
+	// Insert correct request records (true cost = 0.10)
+	err = s.UpsertRequest(RequestRecord{
+		RequestID: "req-1", SessionID: "sess-1",
+		Timestamp: "2026-03-19T10:00:00Z", Model: "claude-sonnet-4-20250514",
+		InputTokens: 100, OutputTokens: 50, Cost: 0.10,
+	})
+	if err != nil {
+		t.Fatalf("UpsertRequest: %v", err)
+	}
+
+	// Rebuild — should overwrite inflated totals with request-level sums
+	err = s.RebuildSessionTotals([]string{"sess-1"})
+	if err != nil {
+		t.Fatalf("RebuildSessionTotals: %v", err)
+	}
+
+	sess, err := s.GetSession("sess-1")
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if sess.TotalInput != 100 {
+		t.Errorf("total_input: got %d, want 100 (not inflated 200)", sess.TotalInput)
+	}
+	if sess.TotalOutput != 50 {
+		t.Errorf("total_output: got %d, want 50 (not inflated 100)", sess.TotalOutput)
+	}
+	if !approxEqual(sess.TotalCost, 0.10) {
+		t.Errorf("total_cost: got %f, want 0.10 (not inflated 0.20)", sess.TotalCost)
+	}
+}
+
+func TestRebuildSessionTotals_Branches(t *testing.T) {
+	s, err := Open(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+
+	// Create session
+	err = s.UpsertSession(SessionDelta{
+		ID: "sess-1", Project: "test", Model: "claude-sonnet-4-20250514",
+		Timestamp: "2026-03-19T12:00:00Z",
+		DeltaInput: 500, DeltaOutput: 250, DeltaCost: 0.50,
+	})
+	if err != nil {
+		t.Fatalf("UpsertSession: %v", err)
+	}
+
+	// Insert requests on different branches
+	err = s.UpsertRequest(RequestRecord{
+		RequestID: "req-a1", SessionID: "sess-1",
+		Timestamp: "2026-03-19T10:00:00Z", Model: "claude-sonnet-4-20250514",
+		InputTokens: 100, OutputTokens: 50, Cost: 0.05, GitBranch: "feat/branch-a",
+	})
+	if err != nil {
+		t.Fatalf("UpsertRequest: %v", err)
+	}
+	err = s.UpsertRequest(RequestRecord{
+		RequestID: "req-a2", SessionID: "sess-1",
+		Timestamp: "2026-03-19T11:00:00Z", Model: "claude-sonnet-4-20250514",
+		InputTokens: 200, OutputTokens: 100, Cost: 0.10, GitBranch: "feat/branch-a",
+	})
+	if err != nil {
+		t.Fatalf("UpsertRequest: %v", err)
+	}
+	err = s.UpsertRequest(RequestRecord{
+		RequestID: "req-b1", SessionID: "sess-1",
+		Timestamp: "2026-03-19T12:00:00Z", Model: "claude-sonnet-4-20250514",
+		InputTokens: 150, OutputTokens: 75, Cost: 0.08, GitBranch: "feat/branch-b",
+	})
+	if err != nil {
+		t.Fatalf("UpsertRequest: %v", err)
+	}
+
+	// Rebuild
+	err = s.RebuildSessionTotals([]string{"sess-1"})
+	if err != nil {
+		t.Fatalf("RebuildSessionTotals: %v", err)
+	}
+
+	// Verify session totals rebuilt correctly
+	sess, err := s.GetSession("sess-1")
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if sess.TotalInput != 450 {
+		t.Errorf("session total_input: got %d, want 450", sess.TotalInput)
+	}
+
+	// Verify session_branches rebuilt from requests
+	rows, total, err := s.ListSessionBranches(10, 0, "cost", "desc")
+	if err != nil {
+		t.Fatalf("ListSessionBranches: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("expected 2 branches, got %d", total)
+	}
+
+	branchInput := make(map[string]int64)
+	branchCost := make(map[string]float64)
+	for _, r := range rows {
+		branchInput[r.Branch] = r.TotalInput
+		branchCost[r.Branch] = r.TotalCost
+	}
+	if branchInput["feat/branch-a"] != 300 {
+		t.Errorf("branch-a input: got %d, want 300", branchInput["feat/branch-a"])
+	}
+	if branchInput["feat/branch-b"] != 150 {
+		t.Errorf("branch-b input: got %d, want 150", branchInput["feat/branch-b"])
+	}
+	if !approxEqual(branchCost["feat/branch-a"], 0.15) {
+		t.Errorf("branch-a cost: got %f, want 0.15", branchCost["feat/branch-a"])
+	}
+}

@@ -31,6 +31,16 @@ func setupTZTestStore(t *testing.T) *Store {
 		t.Fatalf("upsert: %v", err)
 	}
 
+	// Matching request record for today-session
+	err = s.UpsertRequest(RequestRecord{
+		RequestID: "req-today", SessionID: "today-session",
+		Timestamp: ts1, Model: "claude-sonnet-4-20250514",
+		InputTokens: 100, OutputTokens: 50, Cost: 0.05,
+	})
+	if err != nil {
+		t.Fatalf("upsert request: %v", err)
+	}
+
 	// Session 2: activity 2 days ago (should NOT be "today")
 	ts2 := now.AddDate(0, 0, -2).Format(time.RFC3339)
 	err = s.UpsertSession(SessionDelta{
@@ -39,6 +49,16 @@ func setupTZTestStore(t *testing.T) *Store {
 	})
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
+	}
+
+	// Matching request record for old-session
+	err = s.UpsertRequest(RequestRecord{
+		RequestID: "req-old", SessionID: "old-session",
+		Timestamp: ts2, Model: "claude-sonnet-4-20250514",
+		InputTokens: 200, OutputTokens: 100, Cost: 0.10,
+	})
+	if err != nil {
+		t.Fatalf("upsert request: %v", err)
 	}
 
 	return s
